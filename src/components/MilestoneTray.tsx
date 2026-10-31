@@ -7,7 +7,14 @@ interface MilestoneTrayProps {
   dismissedIds: string[];
   onDismiss: (id: string) => void;
   onNavigateTab: (
-    tab: 'TIMELINE' | 'ATHLETICS' | 'EDUCATION' | 'CAREER' | 'ASSETS' | 'UNDERWORLD'
+    tab:
+      | 'TIMELINE'
+      | 'ATHLETICS'
+      | 'EDUCATION'
+      | 'CAREER'
+      | 'POLITICS'
+      | 'ASSETS'
+      | 'UNDERWORLD'
   ) => void;
 }
 

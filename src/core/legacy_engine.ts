@@ -1,4 +1,5 @@
 import { AssetManager } from './asset_manager';
+import { PoliticsEngine } from './politics_engine';
 import { StreetEncounterEngine } from './street_encounter_engine';
 import { EDUCATION_TREE } from '../engine/EducationEngine';
 import { LifeSimulatorEngine } from '../engine/LifeSimulatorEngine';
@@ -59,7 +60,28 @@ export class LegacyEngine {
       nextGenDebt = 0;
     }
 
-    const inheritedSoc = Math.max(15, Math.min(85, Math.round(player.stats.soc * 0.3) + 20));
+    const militaryPrestigeBonus =
+      player.career.primary_job === 'MILITARY_GENERAL'
+        ? 8
+        : player.career.primary_job === 'MILITARY_COLONEL'
+        ? 4
+        : 0;
+    const politicalDynastyBonus =
+      (player.politics?.terms_as_pm ?? 0) >= 1 || player.politics?.office_role === 'PRIME_MINISTER'
+        ? 10
+        : (player.politics?.terms_as_minister ?? 0) >= 1 ||
+          player.politics?.office_role === 'PARTY_LEADER'
+        ? 6
+        : (player.politics?.elections_won ?? 0) >= 1
+        ? 3
+        : 0;
+    const inheritedSoc = Math.max(
+      15,
+      Math.min(
+        90,
+        Math.round(player.stats.soc * 0.3) + 20 + militaryPrestigeBonus + politicalDynastyBonus
+      )
+    );
     const inheritedAth = Math.max(25, Math.min(75, Math.round(player.max_stats_reached.ath * 0.35) + 18));
 
     return {
@@ -184,6 +206,7 @@ export class LegacyEngine {
         safehouse_id: null,
         safehouse_security: 0,
         championship_medals: 0,
+        military_merit: 0,
         side_job: null,
         job_level: 1,
         years_experience: 0,
@@ -202,6 +225,7 @@ export class LegacyEngine {
         is_criminal_record: false,
         is_burnout: false,
         conscription_completed: false,
+        served_conscription: false,
       },
       lineage: updatedLineage,
       street_world: StreetEncounterEngine.createInitialStreetWorld(
@@ -210,6 +234,7 @@ export class LegacyEngine {
           ((deceasedParent.street_world?.neighborhood_affinity ?? 50) + 50) / 2
         )
       ),
+      politics: PoliticsEngine.createInitialPoliticsState(childBirthYearBE),
       history: [
         {
           age: 0,

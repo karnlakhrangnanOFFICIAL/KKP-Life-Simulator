@@ -125,9 +125,12 @@ export class ThaiMilestones {
       player.age === 21 &&
       player.sex === 'MALE' &&
       player.education.rotc_level < 3 &&
+      player.education.active_program !== 'MILITARY_CADET' &&
+      !player.education.completed_levels.includes('MILITARY_CADET') &&
       !player.flags.conscription_completed
     ) {
       const hasBachelorOrPvss =
+        player.education.completed_levels.includes('MILITARY_CADET') ||
         player.education.completed_levels.includes('BACHELOR_REGULAR') ||
         player.education.completed_levels.includes('BACHELOR_SPECIAL') ||
         player.education.completed_levels.includes('OVERSEAS_DEGREE') ||
@@ -138,7 +141,7 @@ export class ThaiMilestones {
         title: 'หมายเรียกเข้ารับการตรวจเลือกทหารกองเกิน (อายุ 21 ปีบริบูรณ์)',
         category: 'MILESTONE_THAI',
         description:
-          'ถึงกำหนดวันคัดเลือกทหารกองประจำการ ณ หอประชุมอำเภอ เนื่องจากคุณไม่ได้เรียน รด. จบชั้นปีที่ 3 คุณต้องตัดสินใจเลือกแนวทางเข้ารับการตรวจเลือกตามกฎหมายไทย',
+          'ถึงกำหนดวันคัดเลือกทหารกองประจำการ ณ หอประชุมอำเภอ เนื่องจากคุณไม่ได้เรียน รด. จบชั้นปีที่ 3 คุณต้องตัดสินใจเลือกแนวทางเข้ารับการตรวจเลือกตามกฎหมายไทย (หากเข้าประจำการครบกำหนด จะได้รับสิทธิ์สอบโควตานักเรียนนายสิบต่อยอดได้)',
         getWeight: () => 1000,
         choices: [
           ...(hasBachelorOrPvss
@@ -147,12 +150,14 @@ export class ThaiMilestones {
                   id: 'volunteer_degree_reduction',
                   label: 'ยื่นวุฒิ ป.ตรี / ปวส. สมัครใจร้องขอเป็นทหารกองประจำการ (ลดหย่อนเหลือ 1 ปี)',
                   sublabel:
-                    'ไม่ต้องลุ้นจับสลาก · พักงานประจำชั่วคราว 1 ปี · รับเงินเดือนทหารเกณฑ์ 10,000 บ./ด. · HP +15, SAN -10',
+                    'ไม่ต้องลุ้นจับสลาก · พักงานประจำชั่วคราว 1 ปี · รับเงินเดือนทหารเกณฑ์ 10,000 บ./ด. · ปลดล็อกโควตาสอบนายสิบ · HP +15, SAN -10',
                   apply: (p: PlayerData) => {
                     const next = clonePlayer(p);
                     next.flags.conscription_completed = true;
+                    next.flags.served_conscription = true;
                     markMilestoneResolved(next, 'THAI_MILITARY_CONSCRIPTION_21');
                     next.career.conscription_years_left = 1;
+                    next.career.military_merit = (next.career.military_merit ?? 0) + 6;
                     if (next.career.primary_job) {
                       next.career.suspended_primary_job = next.career.primary_job;
                       next.career.primary_job = null;
@@ -162,7 +167,7 @@ export class ThaiMilestones {
                     return {
                       updated: next,
                       outcomeText:
-                        'ยื่นวุฒิสมัครใจเข้ากองประจำการผลัดที่ 1 เป็นเวลา 1 ปี (อายัดตำแหน่งงานเดิมไว้ชั่วคราว · HP +15, SAN -10)',
+                        'ยื่นวุฒิสมัครใจเข้ากองประจำการผลัดที่ 1 เป็นเวลา 1 ปี (อายัดตำแหน่งงานเดิมชั่วคราว · ผลงานทหาร +6 · HP +15, SAN -10)',
                     };
                   },
                 },
@@ -174,7 +179,7 @@ export class ThaiMilestones {
               ? 'ยื่นวุฒิประกอบ แล้วเดินเข้าคูหาลุ้นจับ "ใบดำ - ใบแดง" (โอกาสใบแดง 25%)'
               : 'เดินเข้าคูหาลุ้นจับสลาก "ใบดำ - ใบแดง" วัดดวงชะตา! (โอกาสใบแดง 28%)',
             sublabel:
-              'ใบดำ = รอดพ้นทันที (SAN +10) · ใบแดง = ติดทหารเกณฑ์ 1–2 ปี (HP +15, SAN -18, พักงานประจำ)',
+              'ใบดำ = รอดพ้นทันที (SAN +10) · ใบแดง = ติดทหารเกณฑ์ 1–2 ปี พร้อมสิทธิ์โควตาสอบนายสิบตอนปลด (HP +15, SAN -18)',
             apply: (p: PlayerData) => {
               const next = clonePlayer(p);
               next.flags.conscription_completed = true;
@@ -194,7 +199,9 @@ export class ThaiMilestones {
               }
 
               const yearsServed = hasBachelorOrPvss ? 1 : 2;
+              next.flags.served_conscription = true;
               next.career.conscription_years_left = yearsServed;
+              next.career.military_merit = (next.career.military_merit ?? 0) + 6;
               if (next.career.primary_job) {
                 next.career.suspended_primary_job = next.career.primary_job;
                 next.career.primary_job = null;
@@ -204,7 +211,66 @@ export class ThaiMilestones {
 
               return {
                 updated: next,
-                outcomeText: `เสียงเฮลั่นหอประชุม "ทบ. ผลัด 1 ใบแดง!" ต้องเข้าประจำการในค่ายทหารเป็นเวลา ${yearsServed} ปี (เงินเดือน 10,000 บ./ด. · HP +15, SAN -18)`,
+                outcomeText: `เสียงเฮลั่นหอประชุม "ทบ. ผลัด 1 ใบแดง!" ต้องเข้าประจำการในค่ายทหารเป็นเวลา ${yearsServed} ปี (เงินเดือน 10,000 บ./ด. · ปลดล็อกโควตาสอบนายสิบเมื่อครบกำหนด)`,
+              };
+            },
+          },
+        ],
+      };
+    }
+
+    // 3B. Post-Conscription Army NCO Fast-Track Quota (โควตาทหารกองประจำการสอบบรรจุนายสิบ)
+    if (
+      player.flags.served_conscription &&
+      player.career.conscription_years_left === 0 &&
+      !player.flags.is_criminal_record &&
+      !isMilestoneResolved(player, 'THAI_CONSCRIPT_NCO_QUOTA')
+    ) {
+      return {
+        id: 'THAI_CONSCRIPT_NCO_QUOTA',
+        title: 'ครบกำหนดปลดทหารกองประจำการ: สิทธิ์โควตาสอบบรรจุนักเรียนนายสิบกองทัพ',
+        category: 'MILESTONE_THAI',
+        description:
+          'คุณผ่านการฝึกวินัยในค่ายทหารจนครบกำหนดปลดประจำการ กองทัพเปิดโควตาพิเศษให้ทหารกองประจำการที่มีความประพฤติดีสอบบรรจุเข้ารับราชการต่อเป็น "ทหารประทวน (นายสิบ)" ทันที หรือเลือกรับสมุดกองหนุนกลับสู่เส้นทางพลเรือน',
+        getWeight: () => 1000,
+        choices: [
+          {
+            id: 'accept_nco_conscript_quota',
+            label: 'คว้าสิทธิ์โควตาทหารกองประจำการ สอบบรรจุติดยศ "ทหารประทวน (นายสิบ)" ทันที!',
+            sublabel:
+              'บรรจุเป็นนายสิบเริ่มต้นที่ขั้นเงินเดือนระดับ 2 · ผลงานเกียรติคุณทหาร +10 · รับเบี้ยขวัญถุงบรรจุใหม่ +12,000 บ.',
+            apply: (p: PlayerData) => {
+              const next = clonePlayer(p);
+              markMilestoneResolved(next, 'THAI_CONSCRIPT_NCO_QUOTA');
+              next.career.primary_job = 'MILITARY_NCO';
+              next.career.suspended_primary_job = null;
+              next.career.job_level = 2;
+              next.career.years_experience = Math.max(1, next.career.years_experience);
+              next.career.military_merit = (next.career.military_merit ?? 0) + 10;
+              next.finance.cash += 12000;
+              next.stats.san = clamp(next.stats.san + 10, 0, 100);
+              next.stats.soc = clamp(next.stats.soc + 6, 0, 100);
+              return {
+                updated: next,
+                outcomeText:
+                  'สอบติดโควตาทหารกองประจำการ! ประดับบ่าเป็น "ทหารประทวน (นายสิบ)" ขั้นระดับ 2 พร้อมเบี้ยขวัญถุง +12,000 บาท (+10 ผลงานทหาร)',
+              };
+            },
+          },
+          {
+            id: 'discharge_civilian_reserve',
+            label: 'รับสมุดทหารกองหนุนแล้วปลดประจำการกลับสู่เส้นทางพลเรือน / งานเดิม',
+            sublabel:
+              'กลับไปเรียนต่อหรือทำงานอิสระ · คงสิทธิ์อดีตทหารเกณฑ์สมัครนายสิบภายหลังได้ · SAN +12 · SOC +5',
+            apply: (p: PlayerData) => {
+              const next = clonePlayer(p);
+              markMilestoneResolved(next, 'THAI_CONSCRIPT_NCO_QUOTA');
+              next.stats.san = clamp(next.stats.san + 12, 0, 100);
+              next.stats.soc = clamp(next.stats.soc + 5, 0, 100);
+              return {
+                updated: next,
+                outcomeText:
+                  'ปลดประจำการเป็นทหารกองหนุนอย่างภาคภูมิ พร้อมกลับไปลุยเส้นทางชีวิตอิสระ (+12 SAN, +5 SOC)',
               };
             },
           },

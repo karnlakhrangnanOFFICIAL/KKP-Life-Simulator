@@ -9,6 +9,7 @@ export type EducationLevel =
   | 'UPPER_SEC_GENERAL'
   | 'VOCATIONAL_PVCH'
   | 'NON_FORMAL_KSN'
+  | 'MILITARY_CADET'
   | 'PVSS'
   | 'BACHELOR_REGULAR'
   | 'BACHELOR_SPECIAL'
@@ -19,6 +20,7 @@ export type LicenseId =
   | 'BARBER_CERT'
   | 'TEACHER_LICENSE'
   | 'CIVIL_EXAM_PASS'
+  | 'COMMAND_STAFF_CERT'
   | 'ELECTRICIAN_CERT'
   | 'SPORTS_COACH_CERT';
 
@@ -94,6 +96,7 @@ export interface PlayerCareer {
   safehouse_id: SafehouseId | null; // แหล่งกบดานปัจจุบันสำหรับซ่อนตัวจากตำรวจ
   safehouse_security: number; // ความลับพิกัดแหล่งกบดาน (0-100) ยิ่งต่ำเกราะป้องกันยิ่งลดลง
   championship_medals: number;// เหรียญรางวัล/แชมป์สายกีฬาที่คว้าได้
+  military_merit?: number;    // แต้มผลงานเกียรติคุณทางทหารสำหรับพิจารณาเลื่อนชั้นยศนายพัน/นายพล
   side_job: string | null;
   job_level: number;
   years_experience: number;
@@ -158,6 +161,7 @@ export interface PlayerFlags {
   is_criminal_record: boolean;
   is_burnout: boolean;
   conscription_completed: boolean;
+  served_conscription?: boolean;
   resolved_thai_milestones?: string[];
 }
 
@@ -215,6 +219,7 @@ export interface PlayerData {
   history: YearlyLogEntry[];
   pending_year_logs?: string[];
   street_world?: StreetWorldState;
+  politics?: PlayerPoliticsState;
 }
 
 export type GameState = 'TITLE_MENU' | 'PLAYING' | 'GAME_OVER';
@@ -225,14 +230,21 @@ export interface EducationNode {
   shortTitle: string;
   track: 'COMPULSORY' | 'TRACK_A_FORMAL' | 'TRACK_B_NON_FORMAL' | 'HIGHER';
   minAge: number;
+  maxAge?: number;
   durationYears: number;
   prereqLevels: EducationLevel[];
   minInt: number;
+  minHp?: number;
+  minAth?: number;
+  blocksCriminalRecord?: boolean;
   requiresEliteWealth?: boolean;
   annualTuition: number;
+  annualStipend?: number;
   energyDrainYearly: number;
   intGainYearly: number;
   socGainYearly: number;
+  athGainYearly?: number;
+  hpGainYearly?: number;
   sanDeltaYearly: number;
   allowsFullTimeWork: boolean;
   supportsStudentLoan?: boolean;
@@ -245,6 +257,7 @@ export type JobCategory =
   | 'ARTS_FREELANCE'
   | 'SKILLED_SERVICES'
   | 'GOVERNMENT'
+  | 'POLITICS'
   | 'TRADE'
   | 'PROFESSIONAL'
   | 'SPORTS'
@@ -261,6 +274,7 @@ export interface JobDefinition {
   req_stats: Partial<Pick<PlayerStats, 'hp' | 'san' | 'int' | 'soc' | 'ath' | 'luk'>>;
   req_licenses?: LicenseId[];
   req_capital?: number;
+  req_military_merit?: number;
   blocks_criminal_record?: boolean;
   is_illegal?: boolean;
   arrest_risk_base_pct?: number; // โอกาสถูกตำรวจบุกจับต่อปีสำหรับสายมืด
@@ -356,6 +370,7 @@ export type CityDistrictId =
   | 'ATHLETIC_CLUB'
   | 'CAMPUS_ZONE'
   | 'BUSINESS_MARKET'
+  | 'PARLIAMENT_DISTRICT'
   | 'BACK_ALLEY'
   | 'COMMERCIAL_PLAZA';
 
@@ -400,12 +415,115 @@ export interface StreetWorldState {
   recent_snippets: StreetEncounterLog[];
 }
 
+export type IdeologyBloc =
+  | 'PROGRESSIVE'
+  | 'PRAGMATIC_CONSERVATIVE'
+  | 'HARDLINE_CONSERVATIVE';
+
+export type MinistryId =
+  | 'FINANCE'
+  | 'INTERIOR'
+  | 'TRANSPORT'
+  | 'PUBLIC_HEALTH'
+  | 'DEFENSE'
+  | 'AGRICULTURE'
+  | 'JUSTICE'
+  | 'EDUCATION'
+  | 'CULTURE_SOUTH';
+
+export type PoliticalOfficeRole =
+  | 'NONE'
+  | 'PARTY_MEMBER'
+  | 'MP'
+  | 'MINISTER'
+  | 'PARTY_LEADER'
+  | 'PRIME_MINISTER';
+
+export type ParliamentaryBillType =
+  | 'ECONOMIC_STIMULUS'
+  | 'STRUCTURAL_REFORM'
+  | 'SOUTHERN_PEACE_RIGHTS';
+
+export interface PoliticalPartyDefinition {
+  ballotNumber: number; // หมายเลขประจำพรรค 1 - 57
+  name: string;
+  isMajor10: boolean;
+  popularityTier: 'VERY_HIGH' | 'HIGH' | 'MEDIUM' | 'LOW';
+  popularityLabel: string;
+  basePopularityScore: number; // 10 - 95
+  constituencyStrength: number; // 0.5 - 1.4 multiplier for 400 constituency seats
+  partyListStrength: number; // 0.5 - 1.5 multiplier for 100 party-list seats
+  ideologyBloc: IdeologyBloc;
+  ideologyScore: number; // 0 (ปฏิรูปเข้มข้น) -> 50 (อนุรักษนิยมสายบริหาร) -> 100 (อนุรักษนิยมสุดขั้ว)
+  baseRegion: string;
+  buffText: string;
+  debuffText: string;
+  coalitionConditionText: string;
+  preferredMinistries: MinistryId[];
+  requiresGradeAMinistry?: boolean;
+  requiresPmOrFinance?: boolean;
+  requiresAnyMinistry?: boolean;
+  opposesStructuralReform?: boolean;
+  vetoIdeologyBlocs?: IdeologyBloc[];
+  vetoPartyNumbers?: number[];
+  flexibleKingmaker?: boolean;
+}
+
+export interface MinistryPortfolioSpec {
+  id: MinistryId;
+  title: string;
+  shortTitle: string;
+  grade: 'A' | 'B';
+  focusLabel: string;
+  description: string;
+}
+
+export interface PartySeatResult {
+  ballotNumber: number;
+  constituencySeats: number;
+  partyListSeats: number;
+  totalSeats: number;
+  isMinorJackpot?: boolean;
+}
+
+export interface PlayerPoliticsState {
+  party_number: number | null; // 1 - 57
+  office_role: PoliticalOfficeRole;
+  assigned_ministry: MinistryId | null;
+  constituency_popularity: number; // 0 - 100 คะแนนนิยมส่วนตัวในเขตพื้นที่
+  party_influence: number; // 0 - 100 บารมีในพรรค
+  elections_won: number;
+  terms_as_minister: number;
+  terms_as_pm: number;
+  bills_passed: number;
+  switched_bloc_penalty: number; // ดีบัฟฐานเสียงลังเลเมื่อสลับขั้ว
+  last_election_year_be: number;
+  next_election_year_be: number;
+  parliament_seats: PartySeatResult[]; // รวมครบ 500 ที่นั่ง
+  active_minor_party_numbers: number[]; // พรรคปัดเศษเสียงสวรรค์ 3-5 พรรคในสภาชุดนี้
+  coalition_party_numbers: number[];
+  pm_party_number: number | null;
+  ministry_allocations: Record<MinistryId, number>; // MinistryId -> ballotNumber
+  friction_index: number; // 0 - 100 ค่าความขัดแย้งทางอุดมการณ์และโควตา
+  government_stability: number; // 0 - 100 ค่าความเสถียรของรัฐบาล
+  coalition_negotiation_open: boolean; // เปิดให้ผู้เล่นจัดตั้งรัฐบาลใหม่หลังเลือกตั้ง
+  structural_reform_passed_in_term: boolean;
+  last_election_headline: string;
+}
+
 export interface MilestoneNotification {
   id: string;
   category: 'EDUCATION' | 'CAREER' | 'RETIREMENT' | 'FINANCE' | 'HEALTH';
   horizonLabel: string;
   title: string;
   description: string;
-  targetTab?: 'TIMELINE' | 'ATHLETICS' | 'EDUCATION' | 'CAREER' | 'ASSETS' | 'UNDERWORLD';
+  targetTab?:
+    | 'TIMELINE'
+    | 'ATHLETICS'
+    | 'EDUCATION'
+    | 'CAREER'
+    | 'POLITICS'
+    | 'ASSETS'
+    | 'UNDERWORLD';
   actionLabel?: string;
 }

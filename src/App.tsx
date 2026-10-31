@@ -6,6 +6,7 @@ import { EducationTreeView } from './components/EducationTreeView';
 import { EnergyPlannerView } from './components/EnergyPlannerView';
 import { GameOverSummary } from './components/GameOverSummary';
 import { MilestoneTray } from './components/MilestoneTray';
+import { PoliticsParliamentView } from './components/PoliticsParliamentView';
 import {
   PriorityEventToast,
   PriorityToastItem,
@@ -18,6 +19,7 @@ import { UnderworldPanel } from './components/UnderworldPanel';
 import { AssetManager } from './core/asset_manager';
 import { AthleticTrainingEngine } from './core/athletic_training';
 import { EnergySystem } from './core/energy_system';
+import { PoliticsEngine } from './core/politics_engine';
 import { StreetEncounterEngine } from './core/street_encounter_engine';
 import { UnderworldEngine } from './core/underworld_engine';
 import { CareerEngine } from './engine/CareerEngine';
@@ -34,6 +36,8 @@ import {
   EducationLevel,
   GameState,
   LicenseId,
+  MinistryId,
+  ParliamentaryBillType,
   PlayerData,
   SafehouseId,
 } from './engine/types';
@@ -56,6 +60,7 @@ type WorkspaceTab =
   | 'ATHLETICS'
   | 'EDUCATION'
   | 'CAREER'
+  | 'POLITICS'
   | 'UNDERWORLD'
   | 'ASSETS';
 
@@ -453,6 +458,142 @@ export default function App() {
     showNotice(res.message);
   };
 
+  const syncSafeAllocationsAfterEnergySpend = (updatedPlayer: PlayerData) => {
+    const postSummary = EnergySystem.calculateAllocationSummary(updatedPlayer, energyAllocations);
+    if (postSummary.totalAllocated > postSummary.hardCapEnergy) {
+      setEnergyAllocations({});
+    }
+  };
+
+  const handleJoinOrSwitchParty = (ballotNumber: number) => {
+    const res = PoliticsEngine.joinOrSwitchParty(player, ballotNumber);
+    setPlayer(res.updated);
+    if (res.success) {
+      soundFX.playSuccess();
+    } else {
+      soundFX.playAlert();
+    }
+    showNotice(res.message);
+  };
+
+  const handleResignPolitics = () => {
+    const res = PoliticsEngine.resignFromPolitics(player);
+    setPlayer(res.updated);
+    soundFX.playTick();
+    showNotice(res.message);
+  };
+
+  const handleCampaignConstituency = () => {
+    const res = PoliticsEngine.campaignInConstituency(player);
+    setPlayer(res.updated);
+    if (res.success) {
+      syncSafeAllocationsAfterEnergySpend(res.updated);
+      soundFX.playSuccess();
+    } else {
+      soundFX.playAlert();
+    }
+    showNotice(res.message);
+  };
+
+  const handleBuildFactionInfluence = () => {
+    const res = PoliticsEngine.buildPartyFactionInfluence(player);
+    setPlayer(res.updated);
+    if (res.success) {
+      syncSafeAllocationsAfterEnergySpend(res.updated);
+      soundFX.playSuccess();
+    } else {
+      soundFX.playAlert();
+    }
+    showNotice(res.message);
+  };
+
+  const handleChallengeLeadership = () => {
+    const res = PoliticsEngine.challengePartyLeadership(player);
+    setPlayer(res.updated);
+    if (res.success) {
+      syncSafeAllocationsAfterEnergySpend(res.updated);
+      if (res.updated.politics?.office_role === 'PRIME_MINISTER') {
+        soundFX.playThaiMilestoneToastCue();
+      } else {
+        soundFX.playSuccess();
+      }
+    } else {
+      soundFX.playAlert();
+    }
+    showNotice(res.message);
+  };
+
+  const handleConfirmCoalition = (
+    partnerNumbers: number[],
+    ministries: Record<MinistryId, number>,
+    claimPmForPlayerParty: boolean
+  ) => {
+    const res = PoliticsEngine.confirmPlayerCoalitionGovernment(
+      player,
+      partnerNumbers,
+      ministries,
+      claimPmForPlayerParty
+    );
+    setPlayer(res.updated);
+    if (res.success) {
+      if (res.updated.politics?.office_role === 'PRIME_MINISTER') {
+        soundFX.playThaiMilestoneToastCue();
+      } else {
+        soundFX.playSuccess();
+      }
+    } else {
+      soundFX.playAlert();
+    }
+    showNotice(res.message);
+  };
+
+  const handleRecruitMinorParty = (minorBallotNumber: number) => {
+    const res = PoliticsEngine.recruitMinorKingmakerParty(player, minorBallotNumber);
+    setPlayer(res.updated);
+    if (res.success) {
+      syncSafeAllocationsAfterEnergySpend(res.updated);
+      soundFX.playSuccess();
+    } else {
+      soundFX.playAlert();
+    }
+    showNotice(res.message);
+  };
+
+  const handleExecuteMinistryGovernance = () => {
+    const res = PoliticsEngine.executeMinistryGovernance(player);
+    setPlayer(res.updated);
+    if (res.success) {
+      syncSafeAllocationsAfterEnergySpend(res.updated);
+      soundFX.playSuccess();
+    } else {
+      soundFX.playAlert();
+    }
+    showNotice(res.message);
+  };
+
+  const handleProposeBill = (billType: ParliamentaryBillType) => {
+    const res = PoliticsEngine.proposeParliamentaryBill(player, billType);
+    setPlayer(res.updated);
+    syncSafeAllocationsAfterEnergySpend(res.updated);
+    if (res.passed) {
+      soundFX.playSuccess();
+    } else {
+      soundFX.playAlert();
+    }
+    showNotice(res.message);
+  };
+
+  const handleTriggerSnapDissolution = () => {
+    const res = PoliticsEngine.triggerManualSnapDissolution(player);
+    setPlayer(res.updated);
+    if (res.success) {
+      soundFX.playThaiMilestoneToastCue();
+    } else {
+      soundFX.playAlert();
+    }
+    showNotice(res.message);
+  };
+
   const navigateCityTab = (nextTab: WorkspaceTab) => {
     if (gameState === 'PLAYING' && nextTab !== activeTab) {
       const district = StreetEncounterEngine.mapTabToDistrict(nextTab);
@@ -519,11 +660,26 @@ export default function App() {
   const freeSafeEnergy = Math.max(0, energySummary.maxBaseEnergy - energySummary.totalAllocated);
   const totalDebtCombined = player.finance.debt + player.finance.student_loan_debt;
 
+  const currentPartyObj = PoliticsEngine.getPartyByNumber(player.politics?.party_number ?? null);
+  const hasElectedOrLeaderRole =
+    player.politics &&
+    player.politics.office_role !== 'NONE' &&
+    player.politics.office_role !== 'PARTY_MEMBER';
+  const politicalRoleTitle =
+    hasElectedOrLeaderRole && player.politics
+      ? PoliticsEngine.getOfficeRoleLabel(
+          player.politics.office_role,
+          player.politics.assigned_ministry
+        )
+      : null;
+
   const primaryRoleSummary =
     player.career.prison_years_left > 0
       ? `ต้องโทษจำคุก (เหลือ ${player.career.prison_years_left} ปี)`
       : player.career.conscription_years_left > 0
       ? `ทหารกองประจำการ (เหลือ ${player.career.conscription_years_left} ปี)`
+      : politicalRoleTitle
+      ? politicalRoleTitle
       : activeProgramNode
       ? `กำลังเรียน ${activeProgramNode.shortTitle} (ปี ${player.education.years_in_program}/${activeProgramNode.durationYears})`
       : currentPrimaryJob
@@ -552,6 +708,7 @@ export default function App() {
       is_enrolled: player.education.is_enrolled,
     },
     career: player.career,
+    politics: player.politics,
     assets: player.assets,
     street_world: player.street_world,
     macro_economy: player.macro_economy,
@@ -596,20 +753,6 @@ export default function App() {
             type="button"
             onClick={() => {
               if (gameState !== 'PLAYING') handleStartNewLife(true);
-              else navigateCityTab('ATHLETICS');
-            }}
-            className={`hover:text-slate-900 dark:hover:text-slate-100 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-              gameState === 'PLAYING' && activeTab === 'ATHLETICS'
-                ? 'text-amber-700 dark:text-amber-400 underline underline-offset-8 decoration-2'
-                : ''
-            }`}
-          >
-            ศูนย์ฝึกกีฬา
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (gameState !== 'PLAYING') handleStartNewLife(true);
               else navigateCityTab('CAREER');
             }}
             className={`hover:text-slate-900 dark:hover:text-slate-100 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
@@ -619,6 +762,20 @@ export default function App() {
             }`}
           >
             หางาน &amp; อาชีพ
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (gameState !== 'PLAYING') handleStartNewLife(true);
+              else navigateCityTab('POLITICS');
+            }}
+            className={`hover:text-slate-900 dark:hover:text-slate-100 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              gameState === 'PLAYING' && activeTab === 'POLITICS'
+                ? 'text-indigo-700 dark:text-amber-400 underline underline-offset-8 decoration-2'
+                : ''
+            }`}
+          >
+            สภา &amp; การเมือง
           </button>
           <button
             type="button"
@@ -1280,8 +1437,13 @@ export default function App() {
                       {[
                         player.flags.is_married ? 'สมรสแล้ว' : 'สถานะโสด',
                         player.flags.has_children ? 'มีบุตรสืบสกุลแล้ว' : null,
-                        player.sex === 'MALE' && player.education.rotc_level >= 3
+                        player.education.completed_levels.includes('MILITARY_CADET')
+                          ? 'ศิษย์เก่า รร.เตรียมทหาร–นายร้อย'
+                          : player.sex === 'MALE' && player.education.rotc_level >= 3
                           ? 'จบ รด. ปี 3 (ไม่ติดทหาร)'
+                          : null,
+                        player.flags.served_conscription
+                          ? 'ผ่านทหารกองประจำการ (โควตานายสิบ)'
                           : null,
                         player.flags.is_burnout ? 'ติดภาวะไฟมอด (พลังงานปีนี้เหลือ 70)' : null,
                         player.flags.has_chronic_disease ? 'มีโรคประจำตัวเรื้อรัง' : null,
@@ -1291,6 +1453,22 @@ export default function App() {
                         .filter(Boolean)
                         .join(' · ')}
                     </div>
+
+                    {currentPartyObj && player.politics && (
+                      <div className="text-indigo-700 dark:text-indigo-300 font-semibold font-mono-num">
+                        สังกัด{currentPartyObj.name} (เบอร์ {currentPartyObj.ballotNumber}) ·{' '}
+                        {PoliticsEngine.getOfficeRoleLabel(
+                          player.politics.office_role,
+                          player.politics.assigned_ministry
+                        )}
+                      </div>
+                    )}
+
+                    {(player.career.military_merit ?? 0) > 0 && (
+                      <div className="text-emerald-700 dark:text-emerald-400 font-semibold font-mono-num">
+                        ผลงานเกียรติคุณทหาร: {player.career.military_merit} แต้ม
+                      </div>
+                    )}
 
                     {player.career.championship_medals > 0 && (
                       <div className="text-amber-700 dark:text-amber-400 font-semibold font-mono-num">
@@ -1316,9 +1494,9 @@ export default function App() {
                 </div>
               </aside>
 
-              {/* RIGHT MAIN PANEL: Clear 6-Tab City Workspace (Ordered first on mobile) */}
+              {/* RIGHT MAIN PANEL: Clear 7-Tab City Workspace (Ordered first on mobile) */}
               <section className="max-lg:order-1 lg:col-span-8 flex flex-col gap-4 sm:gap-5">
-                {/* Clean 6-Tab Bar */}
+                {/* Clean City Workspace Tab Bar */}
                 <div className="max-lg:-order-1 flex items-center gap-1 p-1.5 bg-slate-200/75 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-x-auto">
                   <button
                     type="button"
@@ -1363,6 +1541,18 @@ export default function App() {
                     }`}
                   >
                     หางาน &amp; อาชีพ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigateCityTab('POLITICS')}
+                    className={`flex-1 px-3 py-2.5 text-xs sm:text-sm font-bold rounded-xl transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                      activeTab === 'POLITICS'
+                        ? 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-amber-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    สภา &amp; การเมือง
+                    {player.politics?.coalition_negotiation_open ? ' (ตั้งรัฐบาล!)' : ''}
                   </button>
                   <button
                     type="button"
@@ -1582,6 +1772,32 @@ export default function App() {
                         onApplyJob={handleApplyJob}
                         onQuitJob={handleQuitJob}
                         onTakeLicense={handleTakeLicense}
+                      />
+                    </div>
+                    <StreetEncounterStrip
+                      player={player}
+                      onStrollDistrict={handleStrollDistrict}
+                      onTakeReaction={handleTakeStreetReaction}
+                    />
+                  </div>
+                )}
+
+                {/* TAB 4B: PARLIAMENT, 57 PARTIES & COALITION POLITICS */}
+                {activeTab === 'POLITICS' && (
+                  <div className="space-y-5">
+                    <div className="p-6 sm:p-7 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                      <PoliticsParliamentView
+                        player={player}
+                        onJoinOrSwitchParty={handleJoinOrSwitchParty}
+                        onResignPolitics={handleResignPolitics}
+                        onCampaignConstituency={handleCampaignConstituency}
+                        onBuildFactionInfluence={handleBuildFactionInfluence}
+                        onChallengeLeadership={handleChallengeLeadership}
+                        onConfirmCoalition={handleConfirmCoalition}
+                        onRecruitMinorParty={handleRecruitMinorParty}
+                        onExecuteMinistryGovernance={handleExecuteMinistryGovernance}
+                        onProposeBill={handleProposeBill}
+                        onTriggerSnapDissolution={handleTriggerSnapDissolution}
                       />
                     </div>
                     <StreetEncounterStrip

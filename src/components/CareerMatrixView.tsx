@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { CAREER_MATRIX, CareerEngine, LICENSE_COURSES } from '../engine/CareerEngine';
+import { EducationEngine } from '../engine/EducationEngine';
 import { LicenseId, PlayerData } from '../engine/types';
 import { Award, Briefcase, Check, LogOut } from 'lucide-react';
 
@@ -17,7 +18,7 @@ export const CareerMatrixView: React.FC<CareerMatrixViewProps> = ({
   onTakeLicense,
 }) => {
   const [filterMode, setFilterMode] = useState<
-    'ALL' | 'ELIGIBLE' | 'SPORTS' | 'UNDERWORLD' | 'LICENSES'
+    'ALL' | 'ELIGIBLE' | 'GOVERNMENT' | 'SPORTS' | 'UNDERWORLD' | 'LICENSES'
   >('ALL');
 
   const primaryJobObj = CareerEngine.getJobById(player.career.primary_job);
@@ -36,6 +37,9 @@ export const CareerMatrixView: React.FC<CareerMatrixViewProps> = ({
         CareerEngine.checkJobRequirements(player, job, true).eligible
       );
     }
+    if (filterMode === 'GOVERNMENT') {
+      return job.category === 'GOVERNMENT';
+    }
     if (filterMode === 'SPORTS') {
       return job.category === 'SPORTS';
     }
@@ -50,10 +54,10 @@ export const CareerMatrixView: React.FC<CareerMatrixViewProps> = ({
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
         <div className="space-y-1">
           <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100">
-            หางาน สมัครนักกีฬาอาชีพ และสอบใบอนุญาตวิชาชีพ
+            หางาน รับราชการทหาร-พลเรือน นักกีฬาอาชีพ และสอบใบอนุญาตวิชาชีพ
           </h3>
           <p className="text-sm text-slate-600 dark:text-slate-400">
-            กดตัวกรอง &ldquo;สมัครได้ตอนนี้&rdquo; เพื่อดูงานที่คุณผ่านเกณฑ์แล้วทันที หรือสอบใบอนุญาตเพื่อปลดล็อกอาชีพเงินเดือนสูง
+            กดตัวกรอง &ldquo;สมัครได้ตอนนี้&rdquo; เพื่อดูงานที่คุณผ่านเกณฑ์แล้วทันที หรือเลือกสายราชการ/ทหารเพื่อดูเส้นทางไต่ยศนายสิบถึงนายพล
           </p>
         </div>
 
@@ -80,6 +84,17 @@ export const CareerMatrixView: React.FC<CareerMatrixViewProps> = ({
             }`}
           >
             สมัครได้ตอนนี้ ({eligibleCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterMode('GOVERNMENT')}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              filterMode === 'GOVERNMENT'
+                ? 'bg-white dark:bg-slate-900 text-emerald-800 dark:text-emerald-400 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+            }`}
+          >
+            ราชการ/ทหาร
           </button>
           <button
             type="button"
@@ -133,6 +148,9 @@ export const CareerMatrixView: React.FC<CareerMatrixViewProps> = ({
               <div className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 font-mono-num">
                 ฐานรายได้ ~{primaryJobObj.base_salary_monthly.toLocaleString()} บ./เดือน · อายุงาน{' '}
                 {player.career.years_experience} ปี
+                {(CareerEngine.isMilitaryJob(primaryJobObj.job_id) ||
+                  (player.career.military_merit ?? 0) > 0) &&
+                  ` · ผลงานทหาร ${player.career.military_merit ?? 0} แต้ม`}
               </div>
             )}
           </div>
@@ -183,10 +201,16 @@ export const CareerMatrixView: React.FC<CareerMatrixViewProps> = ({
             const owned = player.career.licenses.includes(lic.id);
             const blockedByRecord =
               player.flags.is_criminal_record &&
-              (lic.id === 'CIVIL_EXAM_PASS' || lic.id === 'TEACHER_LICENSE');
+              (lic.id === 'CIVIL_EXAM_PASS' ||
+                lic.id === 'TEACHER_LICENSE' ||
+                lic.id === 'COMMAND_STAFF_CERT');
+            const hasRequiredEdu =
+              lic.reqEducation.length === 0 ||
+              EducationEngine.hasCompletedOrHigher(player, lic.reqEducation);
             const canAfford =
               player.career.prison_years_left === 0 &&
               !blockedByRecord &&
+              hasRequiredEdu &&
               player.age >= lic.minAge &&
               player.finance.cash >= lic.cost &&
               player.stats.energy >= lic.energyCost &&
@@ -276,6 +300,8 @@ export const CareerMatrixView: React.FC<CareerMatrixViewProps> = ({
                             ? 'font-semibold text-rose-600 dark:text-rose-400'
                             : job.category === 'SPORTS'
                             ? 'font-semibold text-amber-700 dark:text-amber-400'
+                            : job.category === 'GOVERNMENT'
+                            ? 'font-semibold text-emerald-800 dark:text-emerald-400'
                             : 'font-medium text-slate-700 dark:text-slate-300'
                         }
                       >
@@ -290,6 +316,14 @@ export const CareerMatrixView: React.FC<CareerMatrixViewProps> = ({
                         <>
                           <span aria-hidden="true">·</span>
                           <span>ทักษะกีฬา ATH &ge; {job.req_stats.ath}</span>
+                        </>
+                      )}
+                      {job.req_military_merit !== undefined && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="font-mono-num">
+                            ผลงานทหาร &ge; {job.req_military_merit} แต้ม
+                          </span>
                         </>
                       )}
                       {job.req_capital && (

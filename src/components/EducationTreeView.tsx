@@ -18,6 +18,7 @@ export const EducationTreeView: React.FC<EducationTreeViewProps> = ({ player, on
     const canEnroll =
       check.eligible && level !== 'PRIMARY' && level !== 'LOWER_SEC' && level !== 'NONE';
     const scholarship = level === 'BACHELOR_REGULAR' && player.stats.int >= 78;
+    const isCadetAcademy = level === 'MILITARY_CADET';
 
     return (
       <div
@@ -33,14 +34,29 @@ export const EducationTreeView: React.FC<EducationTreeViewProps> = ({ player, on
         }`}
       >
         <div className="space-y-1.5 min-w-0">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500 dark:text-slate-400">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500 dark:text-slate-400 font-mono-num">
             <span>เรียน {node.durationYears} ปี</span>
             <span aria-hidden="true">·</span>
-            <span>อายุ {node.minAge}+ ปี</span>
+            <span>
+              อายุ {node.minAge}
+              {node.maxAge ? `–${node.maxAge}` : '+'} ปี
+            </span>
             {node.minInt > 0 && (
               <>
                 <span aria-hidden="true">·</span>
                 <span>สติปัญญา INT &ge; {node.minInt}</span>
+              </>
+            )}
+            {node.minAth && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>ร่างกาย ATH &ge; {node.minAth}</span>
+              </>
+            )}
+            {node.minHp && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>สุขภาพ HP &ge; {node.minHp}</span>
               </>
             )}
           </div>
@@ -54,8 +70,16 @@ export const EducationTreeView: React.FC<EducationTreeViewProps> = ({ player, on
           </p>
 
           <div className="pt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm text-slate-600 dark:text-slate-300 font-mono-num">
-            <span className="font-semibold text-slate-800 dark:text-slate-200">
-              {node.annualTuition === 0
+            <span
+              className={`font-semibold ${
+                node.annualStipend
+                  ? 'text-emerald-700 dark:text-emerald-400'
+                  : 'text-slate-800 dark:text-slate-200'
+              }`}
+            >
+              {node.annualStipend
+                ? `เรียนฟรีทุนกองทัพ · รับเบี้ยเลี้ยง ${node.annualStipend.toLocaleString()} บ./ปี`
+                : node.annualTuition === 0
                 ? 'เรียนฟรี'
                 : `ค่าเทอม ${node.annualTuition.toLocaleString()} บ./ปี`}
             </span>
@@ -87,7 +111,11 @@ export const EducationTreeView: React.FC<EducationTreeViewProps> = ({ player, on
                 onClick={() => onEnroll(level, false)}
                 className="px-3.5 py-2 text-xs sm:text-sm font-bold text-slate-950 bg-amber-500 hover:bg-amber-400 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
               >
-                {scholarship ? 'สมัครเรียน (ได้ทุนเรียนดีฟรี!)' : 'สมัครเรียน (จ่ายเงินสด)'}
+                {isCadetAcademy
+                  ? 'สอบเข้าเตรียมทหาร (ทุนฟรี!)'
+                  : scholarship
+                  ? 'สมัครเรียน (ได้ทุนเรียนดีฟรี!)'
+                  : 'สมัครเรียน (จ่ายเงินสด)'}
               </button>
               {!scholarship && node.supportsStudentLoan && (
                 <button
@@ -115,10 +143,10 @@ export const EducationTreeView: React.FC<EducationTreeViewProps> = ({ player, on
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
         <div className="space-y-1">
           <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100">
-            เส้นทางการศึกษาไทยและกองทุนกู้ยืม กยศ.
+            เส้นทางการศึกษาไทย โรงเรียนทหาร และกองทุนกู้ยืม กยศ.
           </h3>
           <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed max-w-3xl">
-            หลังจบ ม.3 สามารถเลือกเรียนต่อสายสามัญ สายอาชีพ (ปวช./ปวส.) หรือเรียน กศน. เพื่อทำงานประจำหาเงินไปพร้อมกันได้ หากเงินไม่พอสามารถยื่นกู้ กยศ. (ดอกเบี้ย 1%/ปี ผ่อนคืนหลังเรียนจบ)
+            หลังจบ ม.3 สามารถเลือกสอบเข้าโรงเรียนเตรียมทหาร–นายร้อย (เรียนฟรีทุนกองทัพ จบติดยศร้อยตรีทันที) หรือเรียนต่อสายสามัญ สายอาชีพ (ปวช./ปวส.) และ กศน. พร้อมสิทธิ์ยื่นกู้ กยศ.
           </p>
         </div>
 
@@ -150,6 +178,16 @@ export const EducationTreeView: React.FC<EducationTreeViewProps> = ({ player, on
           {renderNodeCard('UPPER_SEC_GENERAL')}
           {renderNodeCard('VOCATIONAL_PVCH')}
           {renderNodeCard('NON_FORMAL_KSN')}
+        </div>
+      </div>
+
+      {/* Special Military Academy Track */}
+      <div className="space-y-3">
+        <div className="text-sm font-bold text-slate-800 dark:text-slate-200">
+          เส้นทางพิเศษสายทหารอาชีพ: โรงเรียนเตรียมทหาร – โรงเรียนนายร้อยเหล่าทัพ (รับอายุ 15–18 ปี · เรียนจบติดดาวนายร้อยอัตโนมัติ)
+        </div>
+        <div className="grid grid-cols-1 gap-4">
+          {renderNodeCard('MILITARY_CADET')}
         </div>
       </div>
 

@@ -135,6 +135,37 @@ export const EDUCATION_TREE: Record<EducationLevel, EducationNode> = {
       REMOTE: 'กศน. ตำบล',
     },
   },
+  MILITARY_CADET: {
+    id: 'MILITARY_CADET',
+    title: 'โรงเรียนเตรียมทหาร – โรงเรียนนายร้อยเหล่าทัพ (หลักสูตรต่อเนื่อง 6 ปี)',
+    shortTitle: 'รร.เตรียมทหาร-นายร้อย',
+    track: 'HIGHER',
+    minAge: 15,
+    maxAge: 18,
+    durationYears: 6,
+    prereqLevels: ['LOWER_SEC'],
+    minInt: 55,
+    minAth: 45,
+    minHp: 70,
+    blocksCriminalRecord: true,
+    annualTuition: 0,
+    annualStipend: 36000,
+    energyDrainYearly: 45,
+    intGainYearly: 28,
+    socGainYearly: 16,
+    athGainYearly: 6,
+    hpGainYearly: 4,
+    sanDeltaYearly: -2,
+    allowsFullTimeWork: false,
+    supportsStudentLoan: false,
+    description:
+      'สอบคัดเลือกหลังจบ ม.3 (อายุ 15–18 ปี) เรียนฟรีทุนกองทัพพร้อมรับเบี้ยเลี้ยง 36,000 บ./ปี จบหลักสูตรได้วุฒิเทียบเท่า ป.ตรี พ้นภาระเกณฑ์ทหาร และบรรจุติดดาวเป็นนายร้อยทันที!',
+    sampleSchools: {
+      BANGKOK: 'รร.เตรียมทหาร (นครนายก) ต่อ รร.นายร้อย จปร.',
+      PROVINCIAL: 'รร.เตรียมทหาร ต่อ รร.นายเรือ / รร.นายเรืออากาศ',
+      REMOTE: 'รร.เตรียมทหาร (โควตาช้างเผือกภูมิภาค) ต่อ รร.นายร้อย',
+    },
+  },
   PVSS: {
     id: 'PVSS',
     title: 'ประกาศนียบัตรวิชาชีพชั้นสูง (ปวส. 2 ปี)',
@@ -236,10 +267,18 @@ export class EducationEngine {
 
   static hasCompletedOrHigher(player: PlayerData, requiredLevels: EducationLevel[]): boolean {
     if (requiredLevels.length === 0) return true;
-    // OVERSEAS_DEGREE counts for any Bachelor requirement as well
+    // OVERSEAS_DEGREE and MILITARY_CADET count for Bachelor/Upper-Secondary equivalency
     if (
       player.education.completed_levels.includes('OVERSEAS_DEGREE') &&
       (requiredLevels.includes('BACHELOR_REGULAR') || requiredLevels.includes('BACHELOR_SPECIAL'))
+    ) {
+      return true;
+    }
+    if (
+      player.education.completed_levels.includes('MILITARY_CADET') &&
+      (requiredLevels.includes('UPPER_SEC_GENERAL') ||
+        requiredLevels.includes('BACHELOR_REGULAR') ||
+        requiredLevels.includes('BACHELOR_SPECIAL'))
     ) {
       return true;
     }
@@ -269,11 +308,17 @@ export class EducationEngine {
     if (player.career.conscription_years_left > 0) {
       return { eligible: false, reason: 'อยู่ระหว่างรับราชการทหารกองประจำการ' };
     }
+    if (node.blocksCriminalRecord && player.flags.is_criminal_record) {
+      return { eligible: false, reason: 'ผู้มีประวัติคดีอาญาขาดคุณสมบัติสอบเข้าโรงเรียนทหาร' };
+    }
     if (node.requiresEliteWealth && player.background.family_wealth !== 'WEALTHY_ELITE') {
       return { eligible: false, reason: 'ปลดล็อกเฉพาะทายาทตระกูล WEALTHY_ELITE (มรดก > 2 ล้านบาท)' };
     }
     if (player.age < node.minAge) {
       return { eligible: false, reason: `ต้องมีอายุอย่างน้อย ${node.minAge} ปี` };
+    }
+    if (node.maxAge && player.age > node.maxAge) {
+      return { eligible: false, reason: `เกินเพดานอายุรับสมัครสอบ (${node.maxAge} ปี)` };
     }
     if (node.prereqLevels.length > 0) {
       const hasPrereq = node.prereqLevels.some((lvl) =>
@@ -288,6 +333,18 @@ export class EducationEngine {
       return {
         eligible: false,
         reason: `ต้องการค่าสติปัญญา (INT) >= ${node.minInt} (ปัจจุบัน ${player.stats.int})`,
+      };
+    }
+    if (node.minAth && player.stats.ath < node.minAth) {
+      return {
+        eligible: false,
+        reason: `ต้องการทักษะร่างกาย/กีฬา (ATH) >= ${node.minAth} (ปัจจุบัน ${player.stats.ath})`,
+      };
+    }
+    if (node.minHp && player.stats.hp < node.minHp) {
+      return {
+        eligible: false,
+        reason: `ต้องการสุขภาพกาย (HP) >= ${node.minHp} (ปัจจุบัน ${player.stats.hp})`,
       };
     }
     if (!node.allowsFullTimeWork && player.career.primary_job) {

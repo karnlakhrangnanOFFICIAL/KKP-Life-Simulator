@@ -51,6 +51,11 @@ export const DISTRICT_LABELS: Record<CityDistrictId, Record<BirthLocation, strin
     PROVINCIAL: 'ถนนสายเศรษฐกิจหน้าธนาคาร',
     REMOTE: 'ตลาดนัดใหญ่ประจำตำบล',
   },
+  PARLIAMENT_DISTRICT: {
+    BANGKOK: 'ลานหน้ารัฐสภาและร้านกาแฟนักการเมือง',
+    PROVINCIAL: 'หน้าศาลากลางจังหวัดและซุ้มสภากาแฟ',
+    REMOTE: 'ศาลาประชาคมหมู่บ้านและลานปราศรัย',
+  },
 };
 
 const TIME_OF_DAY_POOL = [
@@ -392,6 +397,26 @@ const STREET_SNIPPET_TEMPLATES: StreetSnippetTemplate[] = [
       socDelta: 1,
     }),
   },
+  {
+    id: 'PARLIAMENT_COFFEE_FORUM',
+    allowedDistricts: ['PARLIAMENT_DISTRICT', 'RESIDENTIAL_SOI'],
+    minAge: 18,
+    contactKey: 'CORNER_SHOP',
+    buildSnippet: ({ contactName }) => ({
+      snippet: `เดินผ่านซุ้มสภากาแฟ ${contactName}กำลังเปิดทีวีถ่ายทอดสดประชุมสภาผู้แทนราษฎร ชาวบ้านล้อมวงวิจารณ์สูตรจับขั้วรัฐบาลและปากท้องกันอย่างออกรส`,
+      sanDelta: 2,
+      localAffinityDelta: 3,
+      socDelta: 2,
+      reaction: {
+        promptLabel: 'เลี้ยงกาแฟโบราณและรับฟังเสียงชาวบ้าน (-30 บ.)',
+        cashCost: 30,
+        bonusSan: 2,
+        bonusAffinity: 5,
+        bonusSoc: 3,
+        outcomeSnippet: 'วงสภากาแฟชื่นชมที่คุณรับฟังปัญหาจริงของชาวบ้านแบบไม่ถือตัว',
+      },
+    }),
+  },
 ];
 
 export class StreetEncounterEngine {
@@ -433,7 +458,15 @@ export class StreetEncounterEngine {
   }
 
   static mapTabToDistrict(
-    tab: 'TIMELINE' | 'ATHLETICS' | 'EDUCATION' | 'CAREER' | 'UNDERWORLD' | 'ASSETS' | 'SCHEMA'
+    tab:
+      | 'TIMELINE'
+      | 'ATHLETICS'
+      | 'EDUCATION'
+      | 'CAREER'
+      | 'POLITICS'
+      | 'UNDERWORLD'
+      | 'ASSETS'
+      | 'SCHEMA'
   ): CityDistrictId | null {
     switch (tab) {
       case 'TIMELINE':
@@ -444,6 +477,8 @@ export class StreetEncounterEngine {
         return 'CAMPUS_ZONE';
       case 'CAREER':
         return 'BUSINESS_MARKET';
+      case 'POLITICS':
+        return 'PARLIAMENT_DISTRICT';
       case 'UNDERWORLD':
         return 'BACK_ALLEY';
       case 'ASSETS':

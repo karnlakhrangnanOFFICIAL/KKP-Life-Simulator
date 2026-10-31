@@ -48,12 +48,24 @@ export const LICENSE_COURSES: LicenseCourse[] = [
     id: 'CIVIL_EXAM_PASS',
     title: 'ติวและสอบภาค ก. (สำนักงาน ก.พ.)',
     minAge: 18,
-    reqEducation: ['PVSS', 'BACHELOR_REGULAR', 'BACHELOR_SPECIAL', 'OVERSEAS_DEGREE'],
+    reqEducation: ['PVSS', 'MILITARY_CADET', 'BACHELOR_REGULAR', 'BACHELOR_SPECIAL', 'OVERSEAS_DEGREE'],
     cost: 4000,
     energyCost: 35,
     minInt: 60,
     passRateBase: 0.55,
     description: 'ใบผ่านทางบรรจุข้าราชการพลเรือนสามัญที่มั่นคง',
+  },
+  {
+    id: 'COMMAND_STAFF_CERT',
+    title: 'สอบคัดเลือกเข้าโรงเรียนเสนาธิการทหาร (หลักสูตรนายทหารชั้นผู้ใหญ่)',
+    minAge: 27,
+    reqEducation: ['MILITARY_CADET', 'BACHELOR_REGULAR', 'BACHELOR_SPECIAL', 'OVERSEAS_DEGREE'],
+    cost: 8000,
+    energyCost: 35,
+    minInt: 66,
+    passRateBase: 0.62,
+    description:
+      'ใบเบิกทางสำคัญสำหรับนายทหารสัญญาบัตรเพื่อปลดล็อกเพดานยศสู่ระดับนายพัน (ผบ.พัน/ผบ.กรม) และนายพล',
   },
   {
     id: 'TEACHER_LICENSE',
@@ -419,37 +431,86 @@ export const CAREER_MATRIX: JobDefinition[] = [
   },
   {
     job_id: 'MILITARY_NCO',
-    title: 'ทหารประทวน (นายสิบ)',
+    title: 'ทหารประทวน (นายสิบ · ส.ต.–จ.ส.อ.)',
     category: 'GOVERNMENT',
-    categoryLabel: 'ราชการ/ความมั่นคง',
+    categoryLabel: 'ราชการทหาร (ชั้นประทวน)',
     min_age: 18,
-    req_education: ['UPPER_SEC_GENERAL', 'VOCATIONAL_PVCH', 'NON_FORMAL_KSN', 'PVSS', 'BACHELOR_REGULAR', 'BACHELOR_SPECIAL'],
-    req_stats: { hp: 70 },
+    req_education: [
+      'UPPER_SEC_GENERAL',
+      'VOCATIONAL_PVCH',
+      'NON_FORMAL_KSN',
+      'PVSS',
+      'MILITARY_CADET',
+      'BACHELOR_REGULAR',
+      'BACHELOR_SPECIAL',
+    ],
+    req_stats: { hp: 65 },
     blocks_criminal_record: true,
-    base_salary_monthly: 15000,
-    hp_drain_yearly: 5,
-    san_drain_yearly: 10,
+    base_salary_monthly: 15500,
+    hp_drain_yearly: 6,
+    san_drain_yearly: 9,
     energy_cost: 45,
     can_be_side_job: false,
     promotion_job_id: 'MILITARY_OFFICER',
-    description: 'รับราชการทหารชั้นประทวน สวัสดิการรักษาพยาบาลครอบคลุมครอบครัว',
+    description:
+      'รับราชการทหารชั้นประทวน สวัสดิการรักษาพยาบาลครอบครัว (อดีตทหารกองประจำการได้โควตาลดเกณฑ์ HP เหลือ 50 และเริ่มขั้นเงินเดือนระดับ 2 ทันที)',
   },
   {
     job_id: 'MILITARY_OFFICER',
-    title: 'นายทหารสัญญาบัตร',
+    title: 'นายทหารสัญญาบัตร (นายร้อย · ร.ต.–ร.อ.)',
     category: 'GOVERNMENT',
-    categoryLabel: 'ราชการ/ความมั่นคง',
-    min_age: 24,
-    req_education: ['BACHELOR_REGULAR', 'BACHELOR_SPECIAL', 'OVERSEAS_DEGREE'],
-    req_stats: { hp: 60, int: 60 },
+    categoryLabel: 'ราชการทหาร (สัญญาบัตรต้น)',
+    min_age: 21,
+    req_education: ['MILITARY_CADET', 'BACHELOR_REGULAR', 'BACHELOR_SPECIAL', 'OVERSEAS_DEGREE'],
+    req_stats: { hp: 60, int: 58 },
     blocks_criminal_record: true,
-    base_salary_monthly: 32000,
-    hp_drain_yearly: 5,
+    base_salary_monthly: 28000,
+    hp_drain_yearly: 6,
     san_drain_yearly: 7,
     energy_cost: 45,
     can_be_side_job: false,
+    promotion_job_id: 'MILITARY_COLONEL',
+    description:
+      'ผู้บังคับหมวดถึงผู้บังคับกองร้อย (บรรจุอัตโนมัติเมื่อจบ รร.นายร้อย หรือสอบบรรจุด้วยวุฒิ ป.ตรี) สอบหลักสูตรเสนาธิการเพื่อก้าวสู่นายพัน',
+  },
+  {
+    job_id: 'MILITARY_COLONEL',
+    title: 'นายทหารอาวุโส (นายพัน · พ.ต.–พ.อ. / ผบ.พัน)',
+    category: 'GOVERNMENT',
+    categoryLabel: 'ราชการทหาร (ระดับบังคับบัญชา)',
+    min_age: 30,
+    req_education: ['MILITARY_CADET', 'BACHELOR_REGULAR', 'BACHELOR_SPECIAL', 'OVERSEAS_DEGREE'],
+    req_stats: { hp: 55, int: 68, soc: 58 },
+    req_licenses: ['COMMAND_STAFF_CERT'],
+    blocks_criminal_record: true,
+    base_salary_monthly: 54000,
+    hp_drain_yearly: 5,
+    san_drain_yearly: 8,
+    energy_cost: 50,
+    can_be_side_job: false,
+    promotion_job_id: 'MILITARY_GENERAL',
+    description:
+      'นายทหารชั้นผู้ใหญ่ระดับผู้บังคับกองพันถึงผู้บังคับการกรม มีอำนาจบัญชาการกำลังพลและเงินประจำตำแหน่งมั่นคง เตรียมชิงเก้าอี้ชั้นนายพล',
+  },
+  {
+    job_id: 'MILITARY_GENERAL',
+    title: 'นายทหารชั้นนายพล (พล.ต.–พล.อ. / ผู้บัญชาการ)',
+    category: 'GOVERNMENT',
+    categoryLabel: 'ราชการทหาร (จุดสูงสุดกองทัพ)',
+    min_age: 40,
+    req_education: ['MILITARY_CADET', 'BACHELOR_REGULAR', 'BACHELOR_SPECIAL', 'OVERSEAS_DEGREE'],
+    req_stats: { int: 75, soc: 75 },
+    req_licenses: ['COMMAND_STAFF_CERT'],
+    req_military_merit: 20,
+    blocks_criminal_record: true,
+    base_salary_monthly: 96000,
+    hp_drain_yearly: 4,
+    san_drain_yearly: 8,
+    energy_cost: 50,
+    can_be_side_job: false,
     promotion_job_id: null,
-    description: 'เลื่อนยศขึ้นเป็นนายทหารสัญญาบัตร มีเกียรติและบำนาญมั่นคงยามเกษียณ',
+    description:
+      'ยอดพีระมิดแห่งกองทัพไทย กุมบังเหียนยุทธศาสตร์ความมั่นคง รายได้รวมเต็มขั้นทะลุ 1.6 แสนบาท/เดือน พร้อมบำเหน็จและบำนาญเกียรติยศตลอดชีพ',
   },
   {
     job_id: 'CIVIL_SERVANT_OFFICER',
@@ -543,6 +604,21 @@ export const CAREER_MATRIX: JobDefinition[] = [
 ];
 
 export class CareerEngine {
+  static isMilitaryJob(jobId: string | null): boolean {
+    return (
+      jobId === 'MILITARY_NCO' ||
+      jobId === 'MILITARY_OFFICER' ||
+      jobId === 'MILITARY_COLONEL' ||
+      jobId === 'MILITARY_GENERAL'
+    );
+  }
+
+  static isGovernmentJob(jobId: string | null): boolean {
+    if (!jobId) return false;
+    const job = this.getJobById(jobId);
+    return job?.category === 'GOVERNMENT';
+  }
+
   static getJobById(jobId: string | null): JobDefinition | null {
     if (!jobId) return null;
     return CAREER_MATRIX.find((j) => j.job_id === jobId) || null;
@@ -590,15 +666,26 @@ export class CareerEngine {
     }
 
     if (job.req_education.length > 0) {
-      const okEdu = EducationEngine.hasCompletedOrHigher(player, job.req_education);
+      // Ex-conscript quota allows NCO application even with M.3 if served_conscription is true
+      const exConscriptNcoQuota =
+        job.job_id === 'MILITARY_NCO' &&
+        Boolean(player.flags.served_conscription) &&
+        EducationEngine.hasCompletedOrHigher(player, ['LOWER_SEC', ...job.req_education]);
+      const okEdu =
+        exConscriptNcoQuota || EducationEngine.hasCompletedOrHigher(player, job.req_education);
       if (!okEdu) {
         const minLabel = EDUCATION_TREE[job.req_education[0]].shortTitle;
         reasons.push(`ต้องมีวุฒิ ${minLabel} ขึ้นไป`);
       }
     }
 
-    if (job.req_stats.hp && player.stats.hp < job.req_stats.hp) {
-      reasons.push(`ต้องการ HP >= ${job.req_stats.hp}`);
+    const effectiveHpReq =
+      job.job_id === 'MILITARY_NCO' && player.flags.served_conscription
+        ? 50
+        : job.req_stats.hp;
+
+    if (effectiveHpReq && player.stats.hp < effectiveHpReq) {
+      reasons.push(`ต้องการ HP >= ${effectiveHpReq}`);
     }
     if (job.req_stats.int && player.stats.int < job.req_stats.int) {
       reasons.push(`ต้องการ INT >= ${job.req_stats.int}`);
@@ -617,6 +704,14 @@ export class CareerEngine {
           reasons.push(`ต้องมีใบอนุญาต: ${course ? course.title : lic}`);
         }
       }
+    }
+
+    if (job.req_military_merit && (player.career.military_merit ?? 0) < job.req_military_merit) {
+      reasons.push(
+        `ต้องการผลงานเกียรติคุณทหาร >= ${job.req_military_merit} แต้ม (ปัจจุบัน ${
+          player.career.military_merit ?? 0
+        })`
+      );
     }
 
     if (job.req_capital && player.finance.cash < job.req_capital) {

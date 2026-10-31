@@ -1,5 +1,6 @@
 import { AssetManager } from '../core/asset_manager';
 import { EnergySystem } from '../core/energy_system';
+import { PoliticsEngine } from '../core/politics_engine';
 import { StreetEncounterEngine } from '../core/street_encounter_engine';
 import { UnderworldEngine } from '../core/underworld_engine';
 import { EventChainQueue } from '../events/event_chain_queue';
@@ -162,6 +163,7 @@ export class LifeSimulatorEngine {
         safehouse_id: null,
         safehouse_security: 0,
         championship_medals: 0,
+        military_merit: 0,
         side_job: null,
         job_level: 1,
         years_experience: 0,
@@ -180,9 +182,11 @@ export class LifeSimulatorEngine {
         is_criminal_record: false,
         is_burnout: false,
         conscription_completed: false,
+        served_conscription: false,
       },
       lineage: [],
       street_world: StreetEncounterEngine.createInitialStreetWorld(location),
+      politics: PoliticsEngine.createInitialPoliticsState(birth_year_be),
       history: [
         {
           age: 0,
@@ -261,7 +265,10 @@ export class LifeSimulatorEngine {
 
     let base = locationAnnualCost[player.background.location];
 
-    if (player.age < 19 && player.education.is_enrolled) {
+    if (player.education.is_enrolled && player.education.active_program === 'MILITARY_CADET') {
+      // โรงเรียนเตรียมทหารและโรงเรียนนายร้อยเป็นนักเรียนประจำ กองทัพดูแลที่พักและอาหาร
+      base = Math.round(base * 0.35);
+    } else if (player.age < 19 && player.education.is_enrolled) {
       const supportRatio = player.background.parent_support / 120;
       base = Math.round(base * (1 - clamp(supportRatio, 0.2, 0.85)));
     }
@@ -269,10 +276,7 @@ export class LifeSimulatorEngine {
     if (player.flags.is_married) base += 24000;
     if (player.flags.has_children) base += 42000;
     if (player.flags.has_chronic_disease) {
-      const isGov =
-        player.career.primary_job === 'MILITARY_NCO' ||
-        player.career.primary_job === 'MILITARY_OFFICER' ||
-        player.career.primary_job === 'CIVIL_SERVANT_OFFICER';
+      const isGov = CareerEngine.isGovernmentJob(player.career.primary_job);
       base += isGov ? 2000 : 15000;
     }
 
@@ -303,7 +307,9 @@ export class LifeSimulatorEngine {
 
     const next = JSON.parse(JSON.stringify(player)) as PlayerData;
     const node = EDUCATION_TREE[targetLevel];
-    const hasScholarship = targetLevel === 'BACHELOR_REGULAR' && next.stats.int >= 78;
+    const isCadetAcademy = targetLevel === 'MILITARY_CADET';
+    const hasScholarship =
+      isCadetAcademy || (targetLevel === 'BACHELOR_REGULAR' && next.stats.int >= 78);
 
     next.education.is_enrolled = true;
     next.education.active_program = targetLevel;
@@ -313,7 +319,14 @@ export class LifeSimulatorEngine {
       !hasScholarship && useStudentLoan && Boolean(node.supportsStudentLoan);
     next.education.school_name = node.sampleSchools[next.background.location];
 
-    const schText = hasScholarship
+    if (isCadetAcademy) {
+      next.education.rotc_level = 3;
+      next.flags.conscription_completed = true;
+    }
+
+    const schText = isCadetAcademy
+      ? ' (ทุนกองทัพเรียนฟรี 100% + รับเบี้ยเลี้ยงนักเรียนนายร้อย 36,000 บ./ปี!)'
+      : hasScholarship
       ? ' (ได้รับทุนเรียนดี ยกเว้นค่าเทอม 100%!)'
       : next.education.uses_student_loan
       ? ' (ใช้สิทธิกู้ยืม กยศ. ผ่อนชำระหลังเรียนจบ ดอกเบี้ย 1%/ปี)'
@@ -363,13 +376,25 @@ export class LifeSimulatorEngine {
       next.career.side_job = job.job_id;
       return { updated: next, message: `เริ่มทำอาชีพเสริม: ${job.title}` };
     } else {
+      const keepGovServiceYears =
+        CareerEngine.isGovernmentJob(next.career.primary_job) && job.category === 'GOVERNMENT';
+      const exConscriptNcoFastTrack =
+        job.job_id === 'MILITARY_NCO' && Boolean(next.flags.served_conscription);
+
       next.career.primary_job = job.job_id;
-      next.career.job_level = 1;
-      next.career.years_experience = 0;
+      next.career.job_level = exConscriptNcoFastTrack ? 2 : 1;
+      if (!keepGovServiceYears) {
+        next.career.years_experience = 0;
+      }
+      if (exConscriptNcoFastTrack && (next.career.military_merit ?? 0) < 6) {
+        next.career.military_merit = 6;
+      }
       return {
         updated: next,
         message: `เริ่มทำงานหลัก: ${job.title}${
-          effectiveJob.req_capital
+          exConscriptNcoFastTrack
+            ? ' (ใช้สิทธิ์โควตาอดีตทหารกองประจำการ เริ่มต้นขั้นเงินเดือนระดับ 2!)'
+            : effectiveJob.req_capital
             ? ` (ลงทุนตั้งต้น ${effectiveJob.req_capital.toLocaleString()} บาท)`
             : ''
         }`,
@@ -407,7 +432,9 @@ export class LifeSimulatorEngine {
       return { updated: player, passed: false, message: `ต้องมีอายุอย่างน้อย ${course.minAge} ปี` };
     }
     if (
-      (licenseId === 'CIVIL_EXAM_PASS' || licenseId === 'TEACHER_LICENSE') &&
+      (licenseId === 'CIVIL_EXAM_PASS' ||
+        licenseId === 'TEACHER_LICENSE' ||
+        licenseId === 'COMMAND_STAFF_CERT') &&
       player.flags.is_criminal_record
     ) {
       return { updated: player, passed: false, message: 'ผู้มีประวัติคดีอาญาขาดคุณสมบัติสอบบรรจุราชการ' };
@@ -451,10 +478,16 @@ export class LifeSimulatorEngine {
     if (passed) {
       next.career.licenses.push(licenseId);
       next.stats.san = clamp(next.stats.san + 6, 0, 100);
+      if (licenseId === 'COMMAND_STAFF_CERT') {
+        next.career.military_merit = (next.career.military_merit ?? 0) + 8;
+      }
       return {
         updated: next,
         passed: true,
-        message: `สอบผ่าน! ได้รับ "${course.title}" เรียบร้อยแล้ว`,
+        message:
+          licenseId === 'COMMAND_STAFF_CERT'
+            ? `สอบผ่าน! สำเร็จ "${course.title}" พร้อมรับผลงานเกียรติคุณทหาร +8 แต้ม`
+            : `สอบผ่าน! ได้รับ "${course.title}" เรียบร้อยแล้ว`,
       };
     }
 
@@ -624,13 +657,15 @@ export class LifeSimulatorEngine {
           next.education.rotc_level = Math.min(3, next.education.rotc_level + 1);
           next.stats.hp = clamp(next.stats.hp + 3, 0, 100);
           next.stats.ath = clamp(next.stats.ath + 3, 0, 100);
+          next.career.military_merit = (next.career.military_merit ?? 0) + 2;
           if (next.education.rotc_level === 3) {
             next.flags.conscription_completed = true;
+            next.career.military_merit = (next.career.military_merit ?? 0) + 2;
             details.push(
-              'สำเร็จการฝึกนักศึกษาวิชาทหาร (รด. ชั้นปีที่ 3) ยกเว้นการจับใบดำ-ใบแดงตอนอายุ 21 ปี!'
+              'สำเร็จการฝึกนักศึกษาวิชาทหาร (รด. ชั้นปีที่ 3) ยกเว้นการจับใบดำ-ใบแดงตอนอายุ 21 ปี! (+4 ผลงานทหาร)'
             );
           } else {
-            details.push(`ผ่านการฝึกวิชาทหาร รด. ชั้นปีที่ ${next.education.rotc_level}/3`);
+            details.push(`ผ่านการฝึกวิชาทหาร รด. ชั้นปีที่ ${next.education.rotc_level}/3 (+2 ผลงานทหาร)`);
           }
           break;
         case 'OPT_EXERCISE_REST':
@@ -719,6 +754,13 @@ export class LifeSimulatorEngine {
         tuitionCost = EducationEngine.calculateAnnualTuition(next, prog);
       }
 
+      if (node.annualStipend && node.annualStipend > 0) {
+        actionIncomeBonus += node.annualStipend;
+        details.push(
+          `รับเบี้ยเลี้ยงนักเรียนเตรียมทหาร–นายร้อย +${node.annualStipend.toLocaleString()} บาท`
+        );
+      }
+
       const yearlyInt = Math.max(
         2,
         Math.round(node.intGainYearly / Math.max(1, node.durationYears > 3 ? 2.2 : 1.8))
@@ -727,6 +769,15 @@ export class LifeSimulatorEngine {
 
       next.stats.int = clamp(next.stats.int + yearlyInt, 0, 100);
       next.stats.soc = clamp(next.stats.soc + yearlySoc, 0, 100);
+      if (node.athGainYearly) {
+        next.stats.ath = clamp(next.stats.ath + node.athGainYearly, 0, 100);
+      }
+      if (node.hpGainYearly) {
+        next.stats.hp = clamp(next.stats.hp + node.hpGainYearly, 0, 100);
+      }
+      if (prog === 'MILITARY_CADET') {
+        next.career.military_merit = (next.career.military_merit ?? 0) + 2;
+      }
       next.stats.san = clamp(next.stats.san + node.sanDeltaYearly, 0, 100);
       next.education.years_in_program += 1;
       next.education.gpa = EducationEngine.computeGPA(next.stats.int, studyFocusGpaBonus);
@@ -745,6 +796,20 @@ export class LifeSimulatorEngine {
         details.push(
           `สำเร็จการศึกษา "${node.title}" ด้วยเกรดเฉลี่ยสะสม ${next.education.gpa.toFixed(2)}!`
         );
+
+        if (prog === 'MILITARY_CADET') {
+          next.education.rotc_level = 3;
+          next.flags.conscription_completed = true;
+          next.career.military_merit = (next.career.military_merit ?? 0) + 12;
+          if (next.career.prison_years_left === 0 && !next.flags.is_criminal_record && !next.career.primary_job) {
+            next.career.primary_job = 'MILITARY_OFFICER';
+            next.career.job_level = 1;
+            next.career.years_experience = Math.max(1, next.career.years_experience);
+            details.push(
+              'เข้ารับพระราชทานกระบี่และบรรจุติดดาวเป็น "นายทหารสัญญาบัตร (นายร้อย · ร.ต.–ร.อ.)" ทันที! (+12 ผลงานเกียรติคุณทหาร)'
+            );
+          }
+        }
       } else {
         details.push(
           `กำลังศึกษา ${node.shortTitle} ชั้นปีที่ ${next.education.years_in_program}/${node.durationYears} (GPA ${next.education.gpa.toFixed(2)})`
@@ -859,17 +924,25 @@ export class LifeSimulatorEngine {
           );
         } else {
           if (primaryJob.category === 'GOVERNMENT' && next.age === 60) {
-            const pensionLumpSum = next.career.years_experience * 22000;
+            const gratuityRate =
+              primaryJob.job_id === 'MILITARY_GENERAL'
+                ? 45000
+                : primaryJob.job_id === 'MILITARY_COLONEL'
+                ? 32000
+                : 22000;
+            const pensionLumpSum = next.career.years_experience * gratuityRate;
             actionIncomeBonus += pensionLumpSum;
             details.push(
-              `เกษียณอายุราชการในตำแหน่ง "${primaryJob.title}" รับบำเหน็จก้อนใหญ่ ${pensionLumpSum.toLocaleString()} บาท!`
+              `เกษียณอายุราชการอย่างสมเกียรติในตำแหน่ง "${primaryJob.title}" รับเงินบำเหน็จก้อนใหญ่ ${pensionLumpSum.toLocaleString()} บาท!`
             );
           }
 
           if (primaryJob.category === 'GOVERNMENT' && next.age > 60) {
             const annualPension = Math.round(primaryJob.base_salary_monthly * 12 * 0.6);
             jobGrossIncome += annualPension;
-            details.push(`รับเงินบำนาญข้าราชการหลังเกษียณ ${annualPension.toLocaleString()} บาท/ปี`);
+            details.push(
+              `รับเงินบำนาญข้าราชการหลังเกษียณ (${primaryJob.title}) +${annualPension.toLocaleString()} บาท/ปี`
+            );
           } else {
             const rawMonthly = CareerEngine.calculateMonthlyJobIncome(next, primaryJob, false);
             const econMult = MacroEconomyEngine.getIncomeMultiplier(econState, primaryJob.category);
@@ -879,6 +952,12 @@ export class LifeSimulatorEngine {
             jobHpDrain += primaryJob.hp_drain_yearly;
             jobSanDrain += primaryJob.san_drain_yearly;
             next.career.years_experience += 1;
+
+            const isMilitary = CareerEngine.isMilitaryJob(primaryJob.job_id);
+            if (isMilitary) {
+              const meritGain = workPromotionBoost ? 5 : 2;
+              next.career.military_merit = (next.career.military_merit ?? 0) + meritGain;
+            }
 
             if (primaryJob.is_illegal) {
               hasIllegalJobIncome = true;
@@ -919,8 +998,15 @@ export class LifeSimulatorEngine {
               }
             }
 
-            const promoChance = workPromotionBoost ? 0.48 : 0.28;
-            if (next.career.years_experience % 3 === 0 && Math.random() < promoChance) {
+            const meritPromoBonus = isMilitary
+              ? Math.min(0.25, (next.career.military_merit ?? 0) * 0.005)
+              : 0;
+            const promoChance = (workPromotionBoost ? 0.48 : 0.28) + meritPromoBonus;
+            const promoIntervalMet = isMilitary
+              ? next.career.years_experience % 2 === 0 || workPromotionBoost
+              : next.career.years_experience % 3 === 0;
+
+            if (promoIntervalMet && Math.random() < promoChance) {
               if (primaryJob.promotion_job_id) {
                 const promoJob = CareerEngine.getJobById(primaryJob.promotion_job_id);
                 if (promoJob) {
@@ -931,9 +1017,16 @@ export class LifeSimulatorEngine {
                     }
                     next.career.primary_job = promoJob.job_id;
                     next.career.job_level = 1;
-                    next.stats.san = clamp(next.stats.san + 10, 0, 100);
-                    details.push(`ก้าวหน้าในสายอาชีพ! ไต่เต้าขึ้นเป็น "${promoJob.title}"!`);
-                  } else {
+                    next.stats.san = clamp(next.stats.san + 12, 0, 100);
+                    if (isMilitary) {
+                      next.stats.soc = clamp(next.stats.soc + 6, 0, 100);
+                      details.push(
+                        `[โผแต่งตั้งโยกย้ายกองทัพ!] เลื่อนชั้นยศและตำแหน่งขึ้นเป็น "${promoJob.title}"! (+12 SAN, +6 SOC)`
+                      );
+                    } else {
+                      details.push(`ก้าวหน้าในสายอาชีพ! ไต่เต้าขึ้นเป็น "${promoJob.title}"!`);
+                    }
+                  } else if (next.career.job_level < 6) {
                     next.career.job_level = Math.min(6, next.career.job_level + 1);
                     details.push(`ปรับฐานรายได้งานหลักเป็นระดับขั้นที่ ${next.career.job_level}`);
                   }
@@ -997,6 +1090,13 @@ export class LifeSimulatorEngine {
     if (next.age >= 60 && next.career.prison_years_left === 0) {
       const allowanceMonthly = next.age >= 80 ? 800 : next.age >= 70 ? 700 : 600;
       actionIncomeBonus += allowanceMonthly * 12;
+    }
+
+    // Thai Parliament, 57-Party Elections & Cabinet Governance Annual Tick
+    const polOut = PoliticsEngine.processYearlyPoliticsTick(next);
+    actionIncomeBonus += polOut.politicalGrossIncome;
+    for (const pLog of polOut.logs) {
+      details.push(pLog);
     }
 
     const totalAnnualIncome = jobGrossIncome + actionIncomeBonus;
@@ -1110,12 +1210,25 @@ export class LifeSimulatorEngine {
     }
 
     const activePrimaryAfter = CareerEngine.getJobById(next.career.primary_job);
+    const activePoliticalRole =
+      next.politics &&
+      next.politics.office_role !== 'NONE' &&
+      next.politics.office_role !== 'PARTY_MEMBER'
+        ? PoliticsEngine.getOfficeRoleLabel(
+            next.politics.office_role,
+            next.politics.assigned_ministry
+          )
+        : null;
     const headline = !next.is_alive
       ? `สิ้นสุดการเดินทางของชีวิต (รุ่นที่ ${next.background.generation}) ในวัย ${next.age} ปี`
       : next.career.prison_years_left > 0
       ? `วัย ${next.age} ปี · ต้องโทษจำคุกในเรือนจำ (เหลือ ${next.career.prison_years_left} ปี)`
       : next.career.conscription_years_left > 0
       ? `วัย ${next.age} ปี · ประจำการทหารกองประจำการ`
+      : activePoliticalRole
+      ? `วัย ${next.age} ปี · ดำรงตำแหน่ง${activePoliticalRole}${
+          activePrimaryAfter ? ` (${activePrimaryAfter.title})` : ''
+        }`
       : activePrimaryAfter
       ? `วัย ${next.age} ปี · ประกอบอาชีพ${activePrimaryAfter.title}`
       : next.education.is_enrolled && next.education.active_program
@@ -1146,7 +1259,11 @@ export class LifeSimulatorEngine {
     const cashPoints = Math.round(player.finance.cash * 0.1);
     const assetPoints = Math.round(assetValue * 0.08);
     const intPoints = Math.round(player.max_stats_reached.int * 10);
-    const socPoints = Math.round(player.max_stats_reached.soc * 10);
+    const politicsPrestigeBonus =
+      (player.politics?.terms_as_pm || 0) * 1500 +
+      (player.politics?.terms_as_minister || 0) * 600 +
+      (player.politics?.bills_passed || 0) * 200;
+    const socPoints = Math.round(player.max_stats_reached.soc * 10 + politicsPrestigeBonus);
     const athPoints = Math.round(player.max_stats_reached.ath * 10 + player.career.championship_medals * 250);
     const agePoints = Math.round(player.age * 50);
     const debtPenalty = Math.round(
@@ -1159,7 +1276,21 @@ export class LifeSimulatorEngine {
     let title = 'สามัญชนคนสู้ชีวิตใต้ฟ้าเมืองไทย';
     let subtitle = 'ผ่านร้อนผ่านหนาว ล้มลุกคลุกคลานและทิ้งเรื่องราวไว้ในความทรงจำ';
 
-    if (player.career.primary_job === 'MAFIA_KINGPIN') {
+    if ((player.politics?.terms_as_pm || 0) >= 1 && !player.flags.is_criminal_record) {
+      title = 'รัฐบุรุษนายกรัฐมนตรีผู้กุมบังเหียนทำเนียบรัฐบาล';
+      subtitle = `นำทัพรัฐบาลผสมบริหารประเทศ ${player.politics?.terms_as_pm} สมัย และผลักดันกฎหมายผ่านสภาผู้แทนราษฎร ${player.politics?.bills_passed || 0} ฉบับ`;
+    } else if (
+      ((player.politics?.terms_as_minister || 0) >= 1 ||
+        player.politics?.office_role === 'PARTY_LEADER') &&
+      !player.flags.is_criminal_record
+    ) {
+      title = 'เสนาบดีและขุนพลการเมืองระดับชาติ';
+      subtitle =
+        'ยืนหยัดในสมรภูมิรัฐสภา ร่วมจัดตั้งรัฐบาลและขับเคลื่อนนโยบายระดับกระทรวงจนเป็นที่จดจำ';
+    } else if ((player.politics?.elections_won || 0) >= 2 && !player.flags.is_criminal_record) {
+      title = 'ผู้แทนราษฎรขวัญใจประชาชนหลายสมัย';
+      subtitle = `ครองใจพี่น้องในเขตเลือกตั้งจนได้รับความไว้วางใจเข้าสภาถึง ${player.politics?.elections_won} สมัย`;
+    } else if (player.career.primary_job === 'MAFIA_KINGPIN') {
       title = 'จอมอิทธิพลเหนือกฎหมาย ตำนานมาเฟียเงามืด';
       subtitle = 'ไต่เต้าจากตรอกมืดสู่จุดสูงสุดของโลกใต้ดิน กุมอำนาจและทรัพย์สินมหาศาลโดยไม่ถูกโค่นล้ม';
     } else if (
@@ -1182,6 +1313,20 @@ export class LifeSimulatorEngine {
     } else if (player.career.prison_years_left > 0) {
       title = 'ปิดฉากชีวิตหลังกำแพงลูกกรงเหล็ก';
       subtitle = 'บทเรียนราคาแพงของทางลัดสีเทาที่แลกมาด้วยอิสรภาพจนวาระสุดท้าย';
+    } else if (
+      player.career.primary_job === 'MILITARY_GENERAL' &&
+      !player.flags.is_criminal_record
+    ) {
+      title = 'ผู้บัญชาการสูงสุด ตำนานนายพลผู้พิทักษ์แผ่นดิน';
+      subtitle =
+        'ไต่เต้าด้วยเกียรติยศและยุทธศาสตร์สู่จุดสูงสุดของกองทัพไทย จารึกชื่อไว้ในประวัติศาสตร์ความมั่นคง';
+    } else if (
+      player.career.primary_job === 'MILITARY_COLONEL' &&
+      !player.flags.is_criminal_record
+    ) {
+      title = 'นายทหารชั้นผู้ใหญ่ผู้ยืนหยัดเคียงข้างผืนแผ่นดิน';
+      subtitle =
+        'นำกำลังพลฝ่าฟันภารกิจความมั่นคงและบรรเทาทุกข์ประชาชนอย่างสมศักดิ์ศรีผู้บังคับบัญชา';
     } else if (
       (player.career.primary_job === 'MILITARY_NCO' ||
         player.career.primary_job === 'MILITARY_OFFICER') &&

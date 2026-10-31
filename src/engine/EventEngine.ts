@@ -1,6 +1,8 @@
+import { PoliticsEngine } from '../core/politics_engine';
 import { UnderworldEngine } from '../core/underworld_engine';
 import { EventChainQueue } from '../events/event_chain_queue';
 import { ThaiMilestones } from '../events/thai_milestones';
+import { CareerEngine } from './CareerEngine';
 import { ConditionalEvent, PlayerData } from './types';
 
 function clamp(val: number, min: number, max: number): number {
@@ -20,6 +22,491 @@ function spendOrDebt(player: PlayerData, amount: number): void {
 }
 
 export const CONDITIONAL_EVENTS: ConditionalEvent[] = [
+  // ================= PARLIAMENT, 57 PARTIES & COALITION POLITICS =================
+  {
+    id: 'POLITICS_QUORUM_COLLAPSE_CRISIS',
+    title: 'วิกฤตสภาล่ม! พรรคร่วมขู่ถอนตัวก่อนศึกอภิปรายไม่ไว้วางใจ',
+    category: 'CRITICAL',
+    description:
+      'ค่าความขัดแย้งในพรรคร่วมรัฐบาลพุ่งสูง สส. ต่างขั้วเริ่มโดดประชุมจนองค์ประชุมสภาล่มซ้ำซาก หากคุมเสียงไม่อยู่ รัฐบาลอาจล่มกลางคันและต้องประกาศยุบสภา!',
+    getWeight: (p) => {
+      const pol = p.politics;
+      if (
+        p.career.prison_years_left > 0 ||
+        !pol ||
+        !pol.party_number ||
+        !pol.coalition_party_numbers.includes(pol.party_number)
+      ) {
+        return 0;
+      }
+      const holdsParliamentRole =
+        pol.office_role === 'MP' ||
+        pol.office_role === 'MINISTER' ||
+        pol.office_role === 'PARTY_LEADER' ||
+        pol.office_role === 'PRIME_MINISTER';
+      if (!holdsParliamentRole) return 0;
+      return pol.government_stability <= 52 || pol.friction_index >= 45 ? 58 : 0;
+    },
+    choices: [
+      {
+        id: 'whip_negotiate_coalition',
+        label: 'เรียกประชุมวิปรัฐบาลด่วน ประนีประนอมโควตางบประมาณพรรคร่วม',
+        sublabel: 'ใช้ทักษะเจรจา SOC & INT · ลดความขัดแย้ง -8 · เสถียรภาพรัฐบาล +14%',
+        apply: (player) => {
+          const next = clonePlayer(player);
+          const pol = PoliticsEngine.ensurePoliticsState(next);
+          const bonus = next.stats.soc >= 65 || next.stats.int >= 65 ? 6 : 0;
+          pol.friction_index = clamp(pol.friction_index - 8, 5, 100);
+          pol.government_stability = clamp(pol.government_stability + 14 + bonus, 0, 100);
+          pol.party_influence = clamp(pol.party_influence + 5, 0, 100);
+          next.stats.san = clamp(next.stats.san - 4, 0, 100);
+          return {
+            updated: next,
+            outcomeText: `เจรจาเคลียร์ใจพรรคร่วมสำเร็จ องค์ประชุมสภากลับมาครบถ้วน (เสถียรภาพรัฐบาล +${
+              14 + bonus
+            }%, ความขัดแย้ง -8)`,
+          };
+        },
+      },
+      {
+        id: 'fund_kingmaker_votes',
+        label: 'อัดงบประสานงานพื้นที่ 35,000 บาท ดึงเสียงสวรรค์พรรคเล็กช่วยค้ำสภา',
+        sublabel: 'หักเงินสด 35,000 บ. · เสถียรภาพรัฐบาล +18% · บารมีในพรรค +7',
+        apply: (player) => {
+          const next = clonePlayer(player);
+          const pol = PoliticsEngine.ensurePoliticsState(next);
+          spendOrDebt(next, 35000);
+          pol.government_stability = clamp(pol.government_stability + 18, 0, 100);
+          pol.party_influence = clamp(pol.party_influence + 7, 0, 100);
+          return {
+            updated: next,
+            outcomeText:
+              'เสียงสวรรค์จากพรรคเล็กยกมือหนุนในสภาอย่างพร้อมเพรียง รอดพ้นวิกฤตสภาล่มหวุดหวิด! (เสถียรภาพรัฐบาล +18%)',
+          };
+        },
+      },
+      {
+        id: 'stand_ideological_ground',
+        label: 'ยืนกรานจุดยืนเดิมไม่ยอมแลกผลประโยชน์ แม้เสี่ยงรัฐบาลล่ม!',
+        sublabel: 'คะแนนนิยมประชาชน +10 · เสถียรภาพรัฐบาล -24% (หากเหลือ 0% จะยุบสภาทันที)',
+        apply: (player) => {
+          const next = clonePlayer(player);
+          const pol = PoliticsEngine.ensurePoliticsState(next);
+          pol.constituency_popularity = clamp(pol.constituency_popularity + 10, 0, 100);
+          pol.government_stability = clamp(pol.government_stability - 24, 0, 100);
+          next.stats.san = clamp(next.stats.san + 4, 0, 100);
+          return {
+            updated: next,
+            outcomeText:
+              'ประชาชนชื่นชมความตรงไปตรงมาของคุณ แต่รอยร้าวในพรรคร่วมรัฐบาลรุนแรงขึ้นอย่างหนัก! (คะแนนนิยมเขต +10, เสถียรภาพรัฐบาล -24%)',
+          };
+        },
+      },
+    ],
+  },
+
+  {
+    id: 'POLITICS_CROSS_AISLE_DEFECTION_DEAL',
+    title: 'ดีลลับข้ามขั้ว! แกนนำรัฐบาลส่งเทียบเชิญชวนสลับขั้วร่วม ครม.',
+    category: 'CAREER',
+    description:
+      'ตัวแทนพรรคแกนนำรัฐบาลแอบนัดพบลับๆ เสนอโควตารัฐมนตรีและงบพัฒนาพื้นที่แลกกับการนำเสียง สส. ของพรรคคุณข้ามขั้วไปช่วยเติมเสียงข้างมากเกิน 251 ที่นั่ง',
+    getWeight: (p) => {
+      const pol = p.politics;
+      if (
+        p.career.prison_years_left > 0 ||
+        !pol ||
+        !pol.party_number ||
+        pol.coalition_party_numbers.includes(pol.party_number)
+      ) {
+        return 0;
+      }
+      return pol.office_role === 'MP' || pol.office_role === 'PARTY_LEADER' ? 36 : 0;
+    },
+    choices: [
+      {
+        id: 'accept_cross_aisle_cabinet',
+        label: 'ตัดสินใจสลับขั้วเข้าร่วมรัฐบาลผสม เพื่อเข้าไปกุมงบทำงานจริง!',
+        sublabel:
+          'พรรคเข้าร่วมรัฐบาล + รับงบประสานงาน 60,000 บ. · เสี่ยงฐานเสียงเดิมผิดหวัง (คะแนนนิยมเขต -12)',
+        apply: (player) => {
+          const next = clonePlayer(player);
+          const pol = PoliticsEngine.ensurePoliticsState(next);
+          if (pol.party_number && !pol.coalition_party_numbers.includes(pol.party_number)) {
+            pol.coalition_party_numbers.push(pol.party_number);
+          }
+          if (next.age >= 35 && pol.party_influence >= 45) {
+            if (pol.office_role !== 'PARTY_LEADER') {
+              pol.office_role = 'MINISTER';
+            }
+            pol.assigned_ministry = pol.assigned_ministry || 'AGRICULTURE';
+            pol.terms_as_minister += 1;
+            if (pol.party_number) {
+              pol.ministry_allocations[pol.assigned_ministry] = pol.party_number;
+            }
+          }
+          next.finance.cash += 60000;
+          pol.constituency_popularity = clamp(pol.constituency_popularity - 12, 5, 100);
+          pol.switched_bloc_penalty = 12;
+          pol.friction_index = clamp(pol.friction_index + 10, 5, 100);
+          pol.government_stability = clamp(pol.government_stability + 10, 0, 100);
+          return {
+            updated: next,
+            outcomeText:
+              'ประกาศจับมือข้ามขั้วเข้าร่วมรัฐบาลผสม! ได้กุมอำนาจบริหารพร้อมทุนการเมือง +60,000 บาท แม้กระแสโซเชียลฐานเสียงเดิมจะวิจารณ์หนัก (-12 คะแนนนิยมเขต)',
+          };
+        },
+      },
+      {
+        id: 'expose_deal_in_debate',
+        label: 'ปฏิเสธดีลลับและนำหลักฐานขึ้นอภิปรายแฉกลางสภาในฐานะฝ่ายค้าน!',
+        sublabel: 'คะแนนนิยมประชาชน +12 · บารมีในพรรค +10 · SOC +6 · สั่นคลอนเสถียรภาพรัฐบาล -12%',
+        apply: (player) => {
+          const next = clonePlayer(player);
+          const pol = PoliticsEngine.ensurePoliticsState(next);
+          pol.constituency_popularity = clamp(pol.constituency_popularity + 12, 0, 100);
+          pol.party_influence = clamp(pol.party_influence + 10, 0, 100);
+          pol.government_stability = clamp(pol.government_stability - 12, 0, 100);
+          next.stats.soc = clamp(next.stats.soc + 6, 0, 100);
+          next.stats.san = clamp(next.stats.san + 8, 0, 100);
+          return {
+            updated: next,
+            outcomeText:
+              'คลิปอภิปรายแฉดีลลับของคุณกลายเป็นไวรัลทั่วประเทศ! ประชาชนยกย่องในจุดยืนผู้แทนที่ไม่ขายเสียง (+12 คะแนนนิยมเขต, +10 บารมีพรรค)',
+          };
+        },
+      },
+    ],
+  },
+
+  {
+    id: 'POLITICS_NATIONAL_ELECTION_EVE',
+    title: 'โค้งสุดท้ายก่อนวันหย่อนบัตรเลือกตั้งใหญ่ 500 ที่นั่ง!',
+    category: 'MILESTONE_THAI',
+    description:
+      'ป้ายหาเสียงทั้ง 57 พรรคการเมืองเรียงรายทั่วถนนทุกสาย เหลือเวลาอีกเพียงอึดใจเดียวก่อนศึกเลือกตั้งใหญ่ระดับชาติ คุณจะเลือกยุทธศาสตร์หาเสียงโค้งสุดท้ายแบบใด?',
+    getWeight: (p) => {
+      const pol = p.politics;
+      if (p.career.prison_years_left > 0 || p.age < 24 || !pol || !pol.party_number) {
+        return 0;
+      }
+      const currentYearBE = p.birth_year_be + p.age;
+      return pol.next_election_year_be - currentYearBE === 1 ? 65 : 0;
+    },
+    choices: [
+      {
+        id: 'digital_debate_wave',
+        label: 'ขึ้นเวทีดีเบตประชันวิสัยทัศน์ระดับชาติและปั่นกระแสโซเชียล',
+        sublabel: 'ใช้งบสื่อ 12,000 บ. · คะแนนนิยมเขต +14 · INT +3 · SOC +5',
+        apply: (player) => {
+          const next = clonePlayer(player);
+          const pol = PoliticsEngine.ensurePoliticsState(next);
+          spendOrDebt(next, 12000);
+          pol.constituency_popularity = clamp(pol.constituency_popularity + 14, 0, 100);
+          next.stats.int = clamp(next.stats.int + 3, 0, 100);
+          next.stats.soc = clamp(next.stats.soc + 5, 0, 100);
+          return {
+            updated: next,
+            outcomeText:
+              'ลีลาตอบคำถามบนเวทีดีเบตเฉียบคมจนติดเทรนด์อันดับ 1 กระแสคนรุ่นใหม่และคนเมืองเทคะแนนให้เพียบ! (+14 คะแนนนิยมเขต)',
+          };
+        },
+      },
+      {
+        id: 'door_to_door_canvassing',
+        label: 'ปูพรมเดินเคาะประตูบ้านทุกตรอกซอยและผนึกกำลังบ้านใหญ่ในพื้นที่',
+        sublabel: 'ใช้งบลงพื้นที่ 20,000 บ. · คะแนนนิยมเขต +17 · บารมีในพรรค +8',
+        apply: (player) => {
+          const next = clonePlayer(player);
+          const pol = PoliticsEngine.ensurePoliticsState(next);
+          spendOrDebt(next, 20000);
+          pol.constituency_popularity = clamp(pol.constituency_popularity + 17, 0, 100);
+          pol.party_influence = clamp(pol.party_influence + 8, 0, 100);
+          return {
+            updated: next,
+            outcomeText:
+              'เข้าถึงชาวบ้านทุกครัวเรือนอย่างใกล้ชิด ฐานเสียงเขตเลือกตั้งแน่นปึ้กพร้อมสู้ศึกวันเข้าคูหา! (+17 คะแนนนิยมเขต, +8 บารมีพรรค)',
+          };
+        },
+      },
+      {
+        id: 'grassroots_volunteer_campaign',
+        label: 'เปิดแคมเปญอาสาสมัครเดินรณรงค์นโยบายแบบประหยัดงบแต่จริงใจ',
+        sublabel: 'ไม่เสียเงินสด · คะแนนนิยมเขต +9 · SAN +6',
+        apply: (player) => {
+          const next = clonePlayer(player);
+          const pol = PoliticsEngine.ensurePoliticsState(next);
+          pol.constituency_popularity = clamp(pol.constituency_popularity + 9, 0, 100);
+          next.stats.san = clamp(next.stats.san + 6, 0, 100);
+          return {
+            updated: next,
+            outcomeText:
+              'พลังอาสาสมัครช่วยกันแจกแผ่นพับนโยบายอย่างคึกคัก ได้ใจผู้มีสิทธิเลือกตั้งด้วยความโปร่งใส (+9 คะแนนนิยมเขต, +6 SAN)',
+          };
+        },
+      },
+    ],
+  },
+
+  // ================= MILITARY & ARMED FORCES DILEMMAS =================
+  {
+    id: 'MILITARY_BORDER_PATROL_CRISIS',
+    title: 'ด่วนที่สุด! หน่วยลาดตระเวนปะทะขบวนการลักลอบขนสิ่งผิดกฎหมายแนวชายแดน!',
+    category: 'CRITICAL',
+    description:
+      'วิทยุสนามแจ้งเหตุฉุกเฉินกลางดึก พบคาราวานสิ่งผิดกฎหมายลักลอบตัดผ่านช่องทางธรรมชาติในเขตรับผิดชอบของคุณ ขณะเดียวกันมีคนกลางแอบติดต่อยื่นซองเงินสดก้อนโตแลกกับการถอนกำลังเปิดทาง',
+    getWeight: (p) =>
+      p.career.prison_years_left === 0 && CareerEngine.isMilitaryJob(p.career.primary_job)
+        ? 34
+        : 0,
+    choices: [
+      {
+        id: 'lead_tactical_border_raid',
+        label: 'นำชุดปฏิบัติการบุกสกัดกั้นและเข้ายึดของกลางตามยุทธวิธีเต็มกำลัง!',
+        sublabel:
+          'เสี่ยงบาดเจ็บจากการปะทะ (HP -8 ถึง -14) · ผลงานเกียรติคุณทหาร +15 · เงินรางวัลนำจับสุจริต +45,000 บ. · เลื่อนขั้นรายได้ +1',
+        apply: (player) => {
+          const next = clonePlayer(player);
+          const tacticalScore =
+            next.stats.ath * 0.4 + next.stats.int * 0.4 + next.stats.luk * 2;
+          if (tacticalScore >= 42) {
+            next.stats.hp = clamp(next.stats.hp - 8, 0, 100);
+            next.stats.san = clamp(next.stats.san + 12, 0, 100);
+            next.stats.soc = clamp(next.stats.soc + 8, 0, 100);
+            next.finance.cash += 45000;
+            next.career.military_merit = (next.career.military_merit ?? 0) + 15;
+            next.career.job_level = Math.min(6, next.career.job_level + 1);
+            return {
+              updated: next,
+              outcomeText:
+                'วางแผนโอบล้อมยึดของกลางล็อตใหญ่สำเร็จ! ได้รับเหรียญเชิดชูเกียรติ เงินรางวัลนำจับ +45,000 บาท และขยับขั้นเงินเดือนทันที (+15 ผลงานทหาร)',
+            };
+          }
+          next.stats.hp = clamp(next.stats.hp - 14, 0, 100);
+          next.stats.san = clamp(next.stats.san + 6, 0, 100);
+          next.finance.cash += 30000;
+          next.career.military_merit = (next.career.military_merit ?? 0) + 12;
+          return {
+            updated: next,
+            outcomeText:
+              'ปะทะดุเดือดสกัดกั้นขบวนการสำเร็จแม้ได้รับบาดเจ็บถากๆ รับเงินรางวัลปฏิบัติการ +30,000 บาท (+12 ผลงานทหาร, HP -14)',
+          };
+        },
+      },
+      {
+        id: 'contain_perimeter_call_backup',
+        label: 'ตรึงกำลังปิดล้อมตามระเบียบและประสานกำลังเสริมชุดใหญ่เข้าเคลียร์พื้นที่',
+        sublabel: 'ปลอดภัยต่อกำลังพล (HP -3) · ผลงานเกียรติคุณทหาร +8 · INT +4 · SAN +5',
+        apply: (player) => {
+          const next = clonePlayer(player);
+          next.stats.hp = clamp(next.stats.hp - 3, 0, 100);
+          next.stats.int = clamp(next.stats.int + 4, 0, 100);
+          next.stats.san = clamp(next.stats.san + 5, 0, 100);
+          next.career.military_merit = (next.career.military_merit ?? 0) + 8;
+          return {
+            updated: next,
+            outcomeText:
+              'คุมพื้นที่อย่างรัดกุมไร้กำลังพลสูญเสีย ผู้บังคับบัญชาชมเชยความรอบคอบ (+8 ผลงานทหาร, INT +4)',
+          };
+        },
+      },
+      {
+        id: 'accept_border_bribe_250k',
+        label: 'แอบรับเงินส่วยเปิดทางชายแดน 250,000 บาท แล้วสั่งถอนกำลังเงียบๆ',
+        sublabel:
+          'รับสด +250,000 บ. · แต่มีโอกาส 40% ถูกข่าวกรอง/จเรทหารจับได้ ถอดยศไล่ออกและจำคุก 4 ปี!',
+        apply: (player) => {
+          const next = clonePlayer(player);
+          if (Math.random() < 0.4) {
+            next.career.military_merit = 0;
+            UnderworldEngine.incarceratePlayer(next, 4, 0.35);
+            return {
+              updated: next,
+              outcomeText:
+                '[คำสั่งถอดยศฟ้าผ่า!] หน่วยข่าวกรองดักฟังหลักฐานรับส่วยชายแดนได้ ศาลทหารพิพากษาถอดยศ ไล่ออกจากราชการ และจำคุก 4 ปี!',
+            };
+          }
+          next.finance.cash += 250000;
+          next.career.notoriety = clamp(next.career.notoriety + 22, 0, 100);
+          next.stats.san = clamp(next.stats.san - 15, 0, 100);
+          return {
+            updated: next,
+            outcomeText:
+              'รับซองเงินร้อน 250,000 บาทแลกกับการหลับตาข้างหนึ่ง แม้รอดพ้นสายตาแต่ความฉาวโฉ่เริ่มสะสมเงียบๆ (Notoriety +22, SAN -15)',
+          };
+        },
+      },
+    ],
+  },
+
+  {
+    id: 'MILITARY_DISASTER_RELIEF_MOBILIZATION',
+    title: 'คำสั่งระดมพลด่วน! นำกำลังทหารช่วยชาวบ้านประสบอุทกภัยและดินถล่มครั้งใหญ่',
+    category: 'CAREER',
+    description:
+      'พายุฝนถล่มหนักจนน้ำป่าไหลหลากตัดขาดหมู่บ้านหลายตำบล กองทัพสั่งตั้งศูนย์บรรเทาสาธารณภัยฉุกเฉิน คุณสามารถเลือกบทบาทการนำกำลังพลเข้าช่วยเหลือประชาชนได้',
+    getWeight: (p) =>
+      p.career.prison_years_left === 0 && CareerEngine.isMilitaryJob(p.career.primary_job)
+        ? 36
+        : 0,
+    choices: [
+      {
+        id: 'frontline_rescue_boats',
+        label: 'อาสานำชุดเรือท้องแบนลุยน้ำเชี่ยวเข้าอพยพผู้สูงอายุและเด็กด้วยตัวเอง',
+        sublabel:
+          'เหนื่อยกาย HP -6 · ได้ใจชาวบ้านเต็มเปี่ยม SOC +10, SAN +14 · ผลงานเกียรติคุณทหาร +12 · เบี้ยเลี้ยงสนาม +10,000 บ.',
+        apply: (player) => {
+          const next = clonePlayer(player);
+          next.stats.hp = clamp(next.stats.hp - 6, 0, 100);
+          next.stats.soc = clamp(next.stats.soc + 10, 0, 100);
+          next.stats.san = clamp(next.stats.san + 14, 0, 100);
+          next.finance.cash += 10000;
+          next.career.military_merit = (next.career.military_merit ?? 0) + 12;
+          return {
+            updated: next,
+            outcomeText:
+              'ลุยน้ำช่วยชาวบ้านปลอดภัยครบทุกคน ภาพความทุ่มเทกลายเป็นข่าวชื่นชมทั่วประเทศ! (+12 ผลงานทหาร, SOC +10, SAN +14)',
+          };
+        },
+      },
+      {
+        id: 'command_bailey_bridge_logistics',
+        label: 'บัญชาการศูนย์ส่งกำลังบำรุงและประกอบสะพานเบลีย์เชื่อมเส้นทางเสบียง',
+        sublabel:
+          'ฝึกทักษะเสนาธิการ INT +7, SOC +6 · ผลงานเกียรติคุณทหาร +10 · เบี้ยเลี้ยง +8,000 บ.',
+        apply: (player) => {
+          const next = clonePlayer(player);
+          next.stats.int = clamp(next.stats.int + 7, 0, 100);
+          next.stats.soc = clamp(next.stats.soc + 6, 0, 100);
+          next.stats.san = clamp(next.stats.san + 8, 0, 100);
+          next.finance.cash += 8000;
+          next.career.military_merit = (next.career.military_merit ?? 0) + 10;
+          return {
+            updated: next,
+            outcomeText:
+              'วางสะพานเหล็กชั่วคราวเปิดเส้นทางรถพยาบาลสำเร็จทันเวลา แสดงฝีมือระดับเสนาธิการ (+10 ผลงานทหาร, INT +7)',
+          };
+        },
+      },
+    ],
+  },
+
+  {
+    id: 'MILITARY_OCTOBER_RESHUFFLE_POLITICS',
+    title: 'คลื่นใต้น้ำฤดูแต่งตั้งโยกย้าย "โผทหารเดือนตุลาคม" และการเมืองในกองทัพ',
+    category: 'CAREER',
+    description:
+      'เข้าสู่ช่วงจัดทำบัญชีรายชื่อแต่งตั้งโยกย้ายนายทหารประจำปี ขั้วอำนาจและรุ่นพี่หลายสายเริ่มขยับตัวชิงเก้าอี้หลัก คุณต้องเลือกจุดยืนในการเดินหมากเส้นทางราชการปีนี้',
+    getWeight: (p) =>
+      p.career.prison_years_left === 0 &&
+      p.age >= 26 &&
+      (p.career.primary_job === 'MILITARY_OFFICER' ||
+        p.career.primary_job === 'MILITARY_COLONEL' ||
+        p.career.primary_job === 'MILITARY_GENERAL')
+        ? 38
+        : 0,
+    choices: [
+      {
+        id: 'professional_merit_soldier',
+        label: 'ยืนหยัดเป็น "ทหารอาชีพ" ยึดผลงานสนามและระเบียบวินัย ไม่อิงขั้วการเมือง',
+        sublabel:
+          'มั่นคงไร้ศัตรู · ผลงานเกียรติคุณทหาร +10 · INT +4 · SAN +8 (ขยับขั้นรายได้ +1 เมื่อแต้มผลงานสูง)',
+        apply: (player) => {
+          const next = clonePlayer(player);
+          next.career.military_merit = (next.career.military_merit ?? 0) + 10;
+          next.stats.int = clamp(next.stats.int + 4, 0, 100);
+          next.stats.san = clamp(next.stats.san + 8, 0, 100);
+          if ((next.career.military_merit ?? 0) >= 24 && next.career.job_level < 6) {
+            next.career.job_level += 1;
+            return {
+              updated: next,
+              outcomeText:
+                'ผลงานเป็นที่ประจักษ์จนคณะกรรมการคัดเลือกต้องยอมรับ! ได้ปรับขั้นเงินเดือนขึ้นเป็นระดับ ' +
+                next.career.job_level +
+                ' อย่างสง่างาม (+10 ผลงานทหาร)',
+            };
+          }
+          return {
+            updated: next,
+            outcomeText:
+              'วางตัวเป็นกลางอย่างมืออาชีพ ผู้ใต้บังคับบัญชาเคารพศรัทธาและสะสมบารมีมั่นคง (+10 ผลงานทหาร, SAN +8)',
+          };
+        },
+      },
+      {
+        id: 'lobby_senior_alumni_faction',
+        label: 'เข้าหาเครือข่ายรุ่นพี่สายอำนาจและจัดเลี้ยงรับรองรุ่น (จ่าย 35,000 บาท)',
+        sublabel:
+          'SOC +10 · ลุ้นติดโผเลื่อนยศข้ามขั้นสู่นายพัน/นายพลทันทีหากผ่านเกณฑ์ · แต่เสี่ยงแป๊กหากขั้วอำนาจเปลี่ยน!',
+        apply: (player) => {
+          const next = clonePlayer(player);
+          spendOrDebt(next, 35000);
+          next.stats.soc = clamp(next.stats.soc + 10, 0, 100);
+          const networkWin = next.stats.soc * 0.7 + next.stats.luk * 3 >= 52;
+          if (networkWin) {
+            next.career.military_merit = (next.career.military_merit ?? 0) + 8;
+            const currentJob = CareerEngine.getJobById(next.career.primary_job);
+            const promoJob = currentJob?.promotion_job_id
+              ? CareerEngine.getJobById(currentJob.promotion_job_id)
+              : null;
+            if (promoJob && CareerEngine.checkJobRequirements(next, promoJob, false).eligible) {
+              next.career.primary_job = promoJob.job_id;
+              next.career.job_level = 1;
+              next.stats.san = clamp(next.stats.san + 14, 0, 100);
+              return {
+                updated: next,
+                outcomeText: `แรงหนุนรุ่นพี่ดันชื่อทะลุโผตุลาคม! ได้รับโปรดเกล้าฯ เลื่อนตำแหน่งขึ้นเป็น "${promoJob.title}" ทันที! (+14 SAN)`,
+              };
+            }
+            next.career.job_level = Math.min(6, next.career.job_level + 2);
+            next.stats.san = clamp(next.stats.san + 10, 0, 100);
+            return {
+              updated: next,
+              outcomeText:
+                'คอนเนกชันสายรุ่นพี่หนุนหลังเต็มตัว! ได้ขยับขั้นเงินเดือนพิเศษ 2 ขั้นรวด (+8 ผลงานทหาร, SOC +10)',
+            };
+          }
+          next.stats.san = clamp(next.stats.san - 12, 0, 100);
+          next.career.military_merit = Math.max(0, (next.career.military_merit ?? 0) - 4);
+          return {
+            updated: next,
+            outcomeText:
+              'ขั้วอำนาจเปลี่ยนกลางคัน! ชื่อหลุดโผถูกโยกไปประจำตำแหน่งผู้ทรงคุณวุฒิชั่วคราว (-35,000 บาท, SAN -12)',
+          };
+        },
+      },
+      {
+        id: 'expose_unit_procurement_graft',
+        label: 'ส่งหลักฐานลับร้องเรียนการหักหัวคิวเบี้ยเลี้ยงและงบจัดซื้อต่อจเรทหาร',
+        sublabel:
+          'เดิมพันศักดิ์ศรี! สำเร็จ = ได้รับยกย่องระดับกองทัพ (ผลงานทหาร +18, เลื่อนขั้น +1) · พลาด = ถูกเพ่งเล็ง (SAN -14)',
+        apply: (player) => {
+          const next = clonePlayer(player);
+          const whistleSuccess = next.stats.int * 0.6 + next.stats.luk * 4 >= 50;
+          if (whistleSuccess) {
+            next.career.military_merit = (next.career.military_merit ?? 0) + 18;
+            next.career.job_level = Math.min(6, next.career.job_level + 1);
+            next.stats.san = clamp(next.stats.san + 16, 0, 100);
+            next.stats.soc = clamp(next.stats.soc + 10, 0, 100);
+            return {
+              updated: next,
+              outcomeText:
+                'หลักฐานแน่นหนาจนกวาดล้างกลุ่มทุจริตได้ยกแก๊ง! ทหารชั้นผู้น้อยเฮลั่นค่าย คุณได้รับบำเหน็จความชอบพิเศษ (+18 ผลงานทหาร, SAN +16)',
+            };
+          }
+          next.career.military_merit = (next.career.military_merit ?? 0) + 4;
+          next.stats.san = clamp(next.stats.san - 14, 0, 100);
+          next.stats.soc = clamp(next.stats.soc - 6, 0, 100);
+          return {
+            updated: next,
+            outcomeText:
+              'เรื่องเงียบหายเข้ากลีบเมฆพร้อมสายตาเย็นชาจากผู้ใหญ่บางกลุ่ม แม้เหนื่อยใจแต่คุณไม่เสียศักดิ์ศรี (SAN -14)',
+          };
+        },
+      },
+    ],
+  },
+
   // ================= SPORTS & ATHLETICS DILEMMAS =================
   {
     id: 'SPORTS_MATCH_FIXING_BRIBE',
@@ -449,10 +936,7 @@ export const CONDITIONAL_EVENTS: ConditionalEvent[] = [
         sublabel: 'ประหยัดค่ารักษา · ฟื้นฟู HP +16',
         apply: (player) => {
           const next = clonePlayer(player);
-          const isGov =
-            next.career.primary_job === 'MILITARY_NCO' ||
-            next.career.primary_job === 'MILITARY_OFFICER' ||
-            next.career.primary_job === 'CIVIL_SERVANT_OFFICER';
+          const isGov = CareerEngine.isGovernmentJob(next.career.primary_job);
           spendOrDebt(next, isGov ? 0 : 30);
           next.stats.hp = clamp(next.stats.hp + 16, 0, 100);
           next.stats.san = clamp(next.stats.san - (isGov ? 0 : 4), 0, 100);

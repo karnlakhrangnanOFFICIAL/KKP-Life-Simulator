@@ -1,3 +1,4 @@
+import { PoliticsEngine } from '../core/politics_engine';
 import { CareerEngine } from './CareerEngine';
 import { EDUCATION_TREE, EducationEngine } from './EducationEngine';
 import { EducationLevel, MilestoneNotification, PlayerData } from './types';
@@ -16,7 +17,9 @@ export class MilestoneEngine {
       player.age >= 19 &&
       player.age <= 20 &&
       player.education.rotc_level < 3 &&
-      !player.flags.conscription_completed
+      !player.flags.conscription_completed &&
+      player.education.active_program !== 'MILITARY_CADET' &&
+      !completed.includes('MILITARY_CADET')
     ) {
       const yearsLeft = 21 - player.age;
       alerts.push({
@@ -27,7 +30,7 @@ export class MilestoneEngine {
         description:
           player.education.rotc_level > 0
             ? `ขณะนี้คุณเรียน รด. ชั้นปีที่ ${player.education.rotc_level}/3 หากเรียนไม่ครบปี 3 ก่อนอายุ 21 ปี จะต้องเข้ารับการคัดเลือกทหาร`
-            : 'คุณไม่ได้เรียน รด. จบชั้นปีที่ 3 เมื่ออายุ 21 ปีต้องเข้าตรวจเลือกทหาร (หากจบ ปวส./ป.ตรี สามารถยื่นลดหย่อนวันประจำการเหลือ 1 ปีได้)',
+            : 'คุณไม่ได้เรียน รด. จบชั้นปีที่ 3 เมื่ออายุ 21 ปีต้องเข้าตรวจเลือกทหาร (หากรับราชการทหารกองประจำการจนครบกำหนด จะได้สิทธิ์โควตาสอบบรรจุนายสิบพิเศษ)',
         targetTab: 'TIMELINE',
       });
     }
@@ -69,13 +72,36 @@ export class MilestoneEngine {
         id: 'approaching-m3-fork',
         category: 'EDUCATION',
         horizonLabel: 'กำลังจะจบ ม.3 ในปีหน้า',
-        title: 'เตรียมเลือกสายสามัญ / อาชีวะ ปวช. / กศน.',
+        title: 'เตรียมเลือกสายสามัญ / เตรียมทหาร / อาชีวะ ปวช. / กศน.',
         description:
-          player.stats.int >= 40
+          player.stats.int >= 55 && player.stats.ath >= 45
+            ? 'สติปัญญาและร่างกายถึงเกณฑ์สอบเข้า โรงเรียนเตรียมทหาร–นายร้อย (เรียนฟรีทุนกองทัพ จบติดดาวนายร้อย!) หรือเลือกต่อ ม.4 สายสามัญ / ปวช.'
+            : player.stats.int >= 40
             ? 'ค่า INT ผ่านเกณฑ์สายสามัญแล้ว (INT >= 40) และหากเป็นเพศชาย การเรียนในระบบ (ม.4 หรือ ปวช.) จะเปิดให้เรียน รด. ยกเว้นเกณฑ์ทหารได้'
             : `หากต้องการเข้า ม.4 สายสามัญ ต้องเร่ง INT ให้ถึง 40 (ปัจจุบัน ${player.stats.int}) หรือเลือกต่อ ปวช. / กศน.`,
         targetTab: 'EDUCATION',
         actionLabel: 'ตรวจสอบเกณฑ์',
+      });
+    }
+
+    // 4B. Eligible for Armed Forces Preparatory & Cadet Academy (Age 15-18)
+    if (
+      player.age >= 15 &&
+      player.age <= 18 &&
+      completed.includes('LOWER_SEC') &&
+      !completed.includes('MILITARY_CADET') &&
+      !player.education.is_enrolled &&
+      EducationEngine.checkEligibility(player, 'MILITARY_CADET').eligible
+    ) {
+      alerts.push({
+        id: `eligible-military-cadet-${player.age}`,
+        category: 'EDUCATION',
+        horizonLabel: `โค้งสุดท้ายสอบเตรียมทหาร (รับอายุ 15–18 ปี)`,
+        title: 'ผ่านเกณฑ์สอบเข้าโรงเรียนเตรียมทหาร – โรงเรียนนายร้อยเหล่าทัพ!',
+        description:
+          'เรียนฟรีทุนกองทัพ 6 ปีเต็มพร้อมรับเบี้ยเลี้ยง 36,000 บาท/ปี เมื่อเรียนจบจะได้รับการประดับยศนายทหารสัญญาบัตร (นายร้อย) ทันที',
+        targetTab: 'EDUCATION',
+        actionLabel: 'สมัครสอบเตรียมทหาร',
       });
     }
 
@@ -85,6 +111,7 @@ export class MilestoneEngine {
       completed.includes('VOCATIONAL_PVCH') ||
       completed.includes('NON_FORMAL_KSN');
     const hasBachelor =
+      completed.includes('MILITARY_CADET') ||
       completed.includes('BACHELOR_REGULAR') ||
       completed.includes('BACHELOR_SPECIAL') ||
       completed.includes('OVERSEAS_DEGREE');
@@ -113,6 +140,27 @@ export class MilestoneEngine {
           actionLabel: 'สมัครเรียนต่อ',
         });
       }
+    }
+
+    // 5B. Military Officer Ready for Command & Staff Exam (เสธ.)
+    if (
+      player.career.primary_job === 'MILITARY_OFFICER' &&
+      player.age >= 27 &&
+      !player.career.licenses.includes('COMMAND_STAFF_CERT')
+    ) {
+      alerts.push({
+        id: `military-command-staff-ready-${player.age}`,
+        category: 'CAREER',
+        horizonLabel:
+          player.stats.int >= 66
+            ? 'พร้อมสอบเข้าโรงเรียนเสนาธิการทหาร (เสธ.)'
+            : `ต้องใช้ INT ≥ 66 เพื่อสอบ เสธ. (ปัจจุบัน ${player.stats.int})`,
+        title: 'ปลดล็อกเส้นทางไต่ยศนายพัน–นายพล ด้วยวุฒิเสนาธิการทหาร',
+        description:
+          'การเลื่อนชั้นจากนายร้อยขึ้นสู่นายพัน (ผบ.พัน) และนายพล จำเป็นต้องสอบผ่านหลักสูตรโรงเรียนเสนาธิการทหารในหมวดสอบใบอนุญาตวิชาชีพ',
+        targetTab: 'CAREER',
+        actionLabel: 'ไปหน้าสอบใบอนุญาต',
+      });
     }
 
     // 6. Ready to buy Condo or Eco-Car milestone
@@ -241,7 +289,41 @@ export class MilestoneEngine {
       }
     }
 
-    // 10. Approaching Retirement Age (Age 55-59)
+    // 10. Political Coalition Formation & Upcoming General Election Alerts
+    if (player.politics && player.career.prison_years_left === 0) {
+      const pol = player.politics;
+      const currentYearBE = player.birth_year_be + player.age;
+      const myParty = PoliticsEngine.getPartyByNumber(pol.party_number);
+
+      if (pol.coalition_negotiation_open && myParty) {
+        alerts.unshift({
+          id: `coalition-negotiation-open-${currentYearBE}`,
+          category: 'CAREER',
+          horizonLabel: 'ดีลตั้งรัฐบาลกำลังเปิดอยู่!',
+          title: `ในฐานะแกนนำ ${myParty.name} สามารถจับขั้วตั้งรัฐบาล 251+ เสียงได้ทันที`,
+          description:
+            'เข้าไปเลือกพรรคร่วมรัฐบาล ตรวจสอบค่าความเข้ากันได้ทางอุดมการณ์ และจัดสรรโควตา 9 กระทรวงเกรด A/B ก่อนเริ่มบริหารประเทศ',
+          targetTab: 'POLITICS',
+          actionLabel: 'ตั้งรัฐบาลผสม',
+        });
+      } else if (
+        myParty &&
+        player.age >= 24 &&
+        pol.next_election_year_be - currentYearBE === 1
+      ) {
+        alerts.push({
+          id: `upcoming-general-election-${pol.next_election_year_be}`,
+          category: 'CAREER',
+          horizonLabel: `เลือกตั้งใหญ่ในปีหน้า (พ.ศ. ${pol.next_election_year_be})`,
+          title: `โค้งสุดท้ายก่อนศึกเลือกตั้ง สส. 500 ที่นั่ง (${myParty.name} เบอร์ ${myParty.ballotNumber})`,
+          description: `คะแนนนิยมพื้นที่ของคุณอยู่ที่ ${pol.constituency_popularity}/100 ควรเร่งลงพื้นที่ปราศรัยหาเสียงในแท็บ "สภา & การเมือง" เพื่อเพิ่มโอกาสคว้าเก้าอี้ สส.`,
+          targetTab: 'POLITICS',
+          actionLabel: 'เตรียมสู้ศึกเลือกตั้ง',
+        });
+      }
+    }
+
+    // 11. Approaching Retirement Age (Age 55-59)
     if (player.age >= 55 && player.age <= 59) {
       const yearsToRetire = 60 - player.age;
       const isGov = primaryJob?.category === 'GOVERNMENT';
