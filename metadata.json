@@ -1,0 +1,8 @@
+{
+  "name": "KKP Life Simulator",
+  "description": "เกมจำลองชีวิตจริงแบบสุ่มตามบริบทสังคมไทย ตั้งแต่แรกเกิด สายการศึกษาสามัญ อาชีวะ กศน. เส้นทางอาชีพ การเงิน และเหตุการณ์ไม่คาดฝันจนถึงวาระสุดท้าย",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
