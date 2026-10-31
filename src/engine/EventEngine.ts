@@ -489,6 +489,48 @@ export const CONDITIONAL_EVENTS: ConditionalEvent[] = [
   },
 
   {
+    id: 'SEVERE_MENTAL_CRISIS',
+    title: 'ภาวะเครียดสะสมขั้นวิกฤต จิตใจใกล้ถึงจุดแตกหัก!',
+    category: 'CRITICAL',
+    description:
+      'แรงกดดันจากภาระชีวิตรุมเร้าจนคุณนอนไม่หลับติดต่อกันหลายสัปดาห์และเกิดอาการแพนิกเฉียบพลัน จำเป็นต้องหยุดพักฟื้นฟูสภาพจิตใจอย่างเร่งด่วน',
+    getWeight: (p) => (p.stats.san < 25 && p.career.prison_years_left === 0 ? 80 : 0),
+    choices: [
+      {
+        id: 'psychiatric_therapy_care',
+        label: 'พบจิตแพทย์และเข้าคอร์สบำบัดฟื้นฟูจิตใจ (จ่าย 12,000 บาท)',
+        sublabel: 'ฟื้นฟู SAN +28 ทันที · ปลดภาวะไฟมอด (Burnout)',
+        apply: (player) => {
+          const next = clonePlayer(player);
+          spendOrDebt(next, 12000);
+          next.stats.san = clamp(next.stats.san + 28, 0, 100);
+          next.flags.is_burnout = false;
+          return {
+            updated: next,
+            outcomeText:
+              'ได้รับการดูแลจากผู้เชี่ยวชาญจนสภาพจิตใจกลับมาเข้มแข็งอีกครั้ง (SAN +28, -12,000 บาท)',
+          };
+        },
+      },
+      {
+        id: 'mental_health_hotline_retreat',
+        label: 'โทรปรึกษาสายด่วนสุขภาพจิต 1323 และลางานกลับไปพักใจกับครอบครัว',
+        sublabel: 'ไม่มีค่าใช้จ่าย · ฟื้นฟู SAN +16 · HP +4',
+        apply: (player) => {
+          const next = clonePlayer(player);
+          next.stats.san = clamp(next.stats.san + 16, 0, 100);
+          next.stats.hp = clamp(next.stats.hp + 4, 0, 100);
+          return {
+            updated: next,
+            outcomeText:
+              'ได้ระบายความอัดอั้นและพักผ่อนเต็มอิ่ม ความมืดมนในใจค่อยๆ คลายลง (SAN +16, HP +4)',
+          };
+        },
+      },
+    ],
+  },
+
+  {
     id: 'FRIEND_BORROW_MONEY_REQUEST',
     title: 'เพื่อนสนิทสมัยเรียนโทรมาขอยืมเงินด่วน 20,000 บาท!',
     category: 'ECONOMY',

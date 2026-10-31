@@ -70,6 +70,73 @@ class SoundController {
     osc.stop(now + 0.19);
   }
 
+  /**
+   * Urgent dual-pulse harmonic warning cue reserved strictly for 'CRITICAL' event toasts
+   */
+  public playCriticalToastCue() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const pulses = [
+      { start: 0, f1: 440, f2: 311.13 },
+      { start: 0.18, f1: 415.3, f2: 293.66 },
+    ];
+
+    pulses.forEach(({ start, f1, f2 }) => {
+      [f1, f2].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = idx === 0 ? 'triangle' : 'sawtooth';
+        osc.frequency.setValueAtTime(freq, now + start);
+        osc.frequency.exponentialRampToValueAtTime(freq * 0.92, now + start + 0.14);
+        gain.gain.setValueAtTime(idx === 0 ? 0.065 : 0.03, now + start);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + start + 0.15);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + start);
+        osc.stop(now + start + 0.16);
+      });
+    });
+  }
+
+  /**
+   * Ceremonial Thai pentatonic golden chime reserved strictly for 'MILESTONE_THAI' event toasts
+   */
+  public playThaiMilestoneToastCue() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    // Ascending Thai pentatonic notes (C5 - D5 - E5 - G5 - C6)
+    const notes = [523.25, 587.33, 659.25, 783.99, 1046.5];
+
+    notes.forEach((freq, idx) => {
+      const start = now + idx * 0.075;
+      const duration = idx === notes.length - 1 ? 0.42 : 0.22;
+
+      const oscMain = ctx.createOscillator();
+      const oscHarmonic = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      oscMain.type = 'triangle';
+      oscMain.frequency.setValueAtTime(freq, start);
+
+      oscHarmonic.type = 'sine';
+      oscHarmonic.frequency.setValueAtTime(freq * 2, start);
+
+      gain.gain.setValueAtTime(0.06, start);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
+
+      oscMain.connect(gain);
+      oscHarmonic.connect(gain);
+      gain.connect(ctx.destination);
+
+      oscMain.start(start);
+      oscHarmonic.start(start);
+      oscMain.stop(start + duration + 0.02);
+      oscHarmonic.stop(start + duration + 0.02);
+    });
+  }
+
   public playGameOver() {
     const ctx = this.getContext();
     if (!ctx) return;

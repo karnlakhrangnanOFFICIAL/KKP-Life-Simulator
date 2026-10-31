@@ -6,6 +6,11 @@ import { EducationTreeView } from './components/EducationTreeView';
 import { EnergyPlannerView } from './components/EnergyPlannerView';
 import { GameOverSummary } from './components/GameOverSummary';
 import { MilestoneTray } from './components/MilestoneTray';
+import {
+  PriorityEventToast,
+  PriorityToastItem,
+  isPriorityToastCategory,
+} from './components/PriorityEventToast';
 import { StageArtwork } from './components/StageArtwork';
 import { StatHistoryChart } from './components/StatHistoryChart';
 import { StreetEncounterStrip } from './components/StreetEncounterStrip';
@@ -77,6 +82,7 @@ export default function App() {
   const [pendingEvent, setPendingEvent] = useState<ConditionalEvent | null>(null);
   const [resolvedEventNote, setResolvedEventNote] = useState<string | undefined>(undefined);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [priorityToasts, setPriorityToasts] = useState<PriorityToastItem[]>([]);
   const [dismissedMilestoneIds, setDismissedMilestoneIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -90,6 +96,55 @@ export default function App() {
 
   const showNotice = (msg: string) => {
     setToastMessage(msg);
+  };
+
+  const enqueuePriorityEventToast = (
+    ev: ConditionalEvent | null,
+    targetPlayer: PlayerData
+  ): boolean => {
+    if (!ev || !isPriorityToastCategory(ev.category)) {
+      return false;
+    }
+
+    const priorityCategory = ev.category;
+    if (priorityCategory === 'CRITICAL') {
+      soundFX.playCriticalToastCue();
+    } else {
+      soundFX.playThaiMilestoneToastCue();
+    }
+
+    const toastId = `${ev.id}-${targetPlayer.age}-${targetPlayer.background.generation}`;
+    setPriorityToasts((prev) => {
+      const withoutDup = prev.filter((item) => item.id !== toastId);
+      return [
+        ...withoutDup,
+        {
+          id: toastId,
+          eventId: ev.id,
+          category: priorityCategory,
+          title: ev.title,
+          description: ev.description,
+          age: targetPlayer.age,
+          yearBe: targetPlayer.birth_year_be + targetPlayer.age,
+        },
+      ];
+    });
+    return true;
+  };
+
+  const dismissPriorityToast = (toastId: string) => {
+    setPriorityToasts((prev) => prev.filter((item) => item.id !== toastId));
+  };
+
+  const focusPriorityToastEvent = (toastId: string) => {
+    setPriorityToasts((prev) => prev.filter((item) => item.id !== toastId));
+    setActiveTab('TIMELINE');
+    window.requestAnimationFrame(() => {
+      document.getElementById('active-annual-event')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    });
   };
 
   const handleRerollPreview = (overrideSex?: BiologicalSex) => {
@@ -126,7 +181,6 @@ export default function App() {
   };
 
   const handleStartNewLife = (usePreview: boolean = true) => {
-    soundFX.playSuccess();
     const startingPlayer = usePreview
       ? { ...previewChar, name: customName.trim() || previewChar.name, sex: selectedSex }
       : LifeSimulatorEngine.createRandomCharacter();
@@ -136,15 +190,18 @@ export default function App() {
     setGameState('PLAYING');
     setActiveTab('TIMELINE');
     setToastMessage(null);
+    setPriorityToasts([]);
     setResolvedEventNote(undefined);
     setDismissedMilestoneIds([]);
 
     const initialEv = EventEngine.evaluateYearlyEvent(startingPlayer);
     setPendingEvent(initialEv);
+    if (!enqueuePriorityEventToast(initialEv, startingPlayer)) {
+      soundFX.playSuccess();
+    }
   };
 
   const handleContinueAsNextGenChild = (childPlayer: PlayerData) => {
-    soundFX.playSuccess();
     setPlayer(childPlayer);
     setEnergyAllocations(buildDefaultAllocations(childPlayer));
     setGameState('PLAYING');
@@ -152,11 +209,15 @@ export default function App() {
     setToastMessage(
       `เริ่มชีวิตใหม่ในฐานะทายาทรุ่นที่ ${childPlayer.background.generation} (${childPlayer.name})`
     );
+    setPriorityToasts([]);
     setResolvedEventNote(undefined);
     setDismissedMilestoneIds([]);
 
     const initialEv = EventEngine.evaluateYearlyEvent(childPlayer);
     setPendingEvent(initialEv);
+    if (!enqueuePriorityEventToast(initialEv, childPlayer)) {
+      soundFX.playSuccess();
+    }
   };
 
   const handleResetToMenu = () => {
@@ -167,6 +228,7 @@ export default function App() {
     setPendingEvent(null);
     setResolvedEventNote(undefined);
     setToastMessage(null);
+    setPriorityToasts([]);
     setDismissedMilestoneIds([]);
     setShowSchemaModal(false);
     setGameState('TITLE_MENU');
@@ -177,6 +239,7 @@ export default function App() {
     const choice = pendingEvent.choices[choiceIndex];
     if (!choice) return;
 
+    const resolvedId = pendingEvent.id;
     soundFX.playTick();
     const { updated, outcomeText } = choice.apply(player);
 
@@ -188,6 +251,7 @@ export default function App() {
           : 'ภาวะจิตใจแตกสลายจากวิกฤตชีวิต';
       setPlayer(updated);
       setPendingEvent(null);
+      setPriorityToasts([]);
       soundFX.playGameOver();
       setGameState('GAME_OVER');
       return;
@@ -196,6 +260,7 @@ export default function App() {
     setPlayer(updated);
     setResolvedEventNote(`${pendingEvent.title} -> ${outcomeText}`);
     setPendingEvent(null);
+    setPriorityToasts((prev) => prev.filter((item) => item.eventId !== resolvedId));
     showNotice(outcomeText);
   };
 
@@ -214,21 +279,18 @@ export default function App() {
     setToastMessage(null);
 
     if (!nextPlayer.is_alive) {
+      setPriorityToasts([]);
       soundFX.playGameOver();
       setGameState('GAME_OVER');
       return;
     }
 
-    soundFX.playTick();
-
     const nextEvent = EventEngine.evaluateYearlyEvent(nextPlayer);
-    if (
-      nextEvent &&
-      (nextEvent.category === 'CRITICAL' || nextEvent.category === 'MILESTONE_THAI')
-    ) {
-      soundFX.playAlert();
-    }
     setPendingEvent(nextEvent);
+    const playedPriorityCue = enqueuePriorityEventToast(nextEvent, nextPlayer);
+    if (!playedPriorityCue) {
+      soundFX.playTick();
+    }
   };
 
   // Keyboard shortcuts: 1-3 for Event Choices, Enter for advancing year in Energy Planner
@@ -603,13 +665,21 @@ export default function App() {
       </header>
 
       {/* Main Content Container */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-        {/* Clean Utility Bar (Sound & Light/Dark Theme Toggle) */}
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8 flex flex-col">
+        {/* Clean Utility Bar (Sound & Light/Dark Theme Toggle — moves below primary card on mobile during active play) */}
+        <div
+          className={`flex flex-wrap items-center justify-between gap-3 ${
+            gameState === 'PLAYING' ? 'max-lg:order-2 max-lg:mt-5 lg:mb-6' : 'mb-6'
+          }`}
+        >
           <div className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
             {gameState === 'PLAYING' ? (
               <span>
-                กำลังเล่นเป็น <strong className="text-slate-900 dark:text-slate-100">{player.name}</strong> · คีย์ลัด: กดเลข <span className="font-mono-num font-semibold">1–3</span> เลือกเหตุการณ์ และกด <span className="font-mono-num font-semibold">Enter</span> เพื่อจบปี
+                กำลังเล่นเป็น <strong className="text-slate-900 dark:text-slate-100">{player.name}</strong>
+                <span className="hidden sm:inline">
+                  {' '}
+                  · คีย์ลัด: กดเลข <span className="font-mono-num font-semibold">1–3</span> เลือกเหตุการณ์ และกด <span className="font-mono-num font-semibold">Enter</span> เพื่อจบปี
+                </span>
               </span>
             ) : (
               <span>
@@ -866,9 +936,9 @@ export default function App() {
 
         {/* STATE 2: ACTIVE GAMEPLAY */}
         {gameState === 'PLAYING' && (
-          <div className="space-y-6">
-            {/* AT-A-GLANCE 4-CARD SUMMARY STRIP (Understand everything in 2 seconds) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="max-lg:order-1 flex flex-col gap-5 sm:gap-6">
+            {/* AT-A-GLANCE 4-CARD SUMMARY STRIP (Shown below primary decision card on mobile, top on desktop) */}
+            <div className="max-lg:order-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Card 1: Age & Generation */}
               <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1">
                 <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
@@ -960,9 +1030,9 @@ export default function App() {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-              {/* LEFT SIDEBAR: Clean Character Sheet with Visual Bars (No nested box clutter) */}
-              <aside className="lg:col-span-4">
+            <div className="max-lg:order-1 grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start">
+              {/* LEFT SIDEBAR: Clean Character Sheet with Visual Bars (Ordered below workspace on mobile) */}
+              <aside className="max-lg:order-2 lg:col-span-4">
                 <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-5">
                   {/* Character Identity Header */}
                   <div className="space-y-1">
@@ -1246,10 +1316,10 @@ export default function App() {
                 </div>
               </aside>
 
-              {/* RIGHT MAIN PANEL: Clear 6-Tab City Workspace */}
-              <section className="lg:col-span-8 space-y-5">
+              {/* RIGHT MAIN PANEL: Clear 6-Tab City Workspace (Ordered first on mobile) */}
+              <section className="max-lg:order-1 lg:col-span-8 flex flex-col gap-4 sm:gap-5">
                 {/* Clean 6-Tab Bar */}
-                <div className="flex items-center gap-1 p-1.5 bg-slate-200/75 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-x-auto">
+                <div className="max-lg:-order-1 flex items-center gap-1 p-1.5 bg-slate-200/75 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-x-auto">
                   <button
                     type="button"
                     onClick={() => navigateCityTab('TIMELINE')}
@@ -1318,16 +1388,16 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Clear Feedback Toast Banner */}
+                {/* Calm Neutral Routine Update Banner (Differentiated from Priority Toast System) */}
                 {toastMessage && (
-                  <div className="px-5 py-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800/70 text-sm text-amber-950 dark:text-amber-200 flex items-center justify-between gap-3">
+                  <div className="px-5 py-3.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-sm text-slate-800 dark:text-slate-200 flex items-center justify-between gap-3">
                     <span>
                       <strong>ผลลัพธ์ล่าสุด:</strong> {toastMessage}
                     </span>
                     <button
                       type="button"
                       onClick={() => setToastMessage(null)}
-                      className="text-xs font-semibold text-amber-800 dark:text-amber-300 hover:underline whitespace-nowrap shrink-0 cursor-pointer"
+                      className="text-xs font-semibold text-slate-600 dark:text-slate-300 hover:underline whitespace-nowrap shrink-0 cursor-pointer"
                     >
                       รับทราบ
                     </button>
@@ -1344,45 +1414,64 @@ export default function App() {
 
                 {/* TAB 1: TIMELINE & ANNUAL ENERGY ALLOCATION */}
                 {activeTab === 'TIMELINE' && (
-                  <div className="space-y-6">
+                  <div className="max-lg:contents lg:space-y-6">
                     {pendingEvent ? (
-                      <div className="p-6 sm:p-7 rounded-2xl bg-white dark:bg-slate-900 border-2 border-amber-500/70 space-y-5">
-                        <div className="space-y-2">
-                          <div className="text-xs sm:text-sm font-bold text-amber-700 dark:text-amber-400">
-                            {pendingEvent.category === 'MILESTONE_THAI'
-                              ? `เหตุการณ์สำคัญตามช่วงวัย · อายุ ${player.age} ปี (เลือก 1 ข้อเพื่อไปต่อ)`
+                      <div
+                        id="active-annual-event"
+                        className={`max-lg:-order-2 p-4 sm:p-7 rounded-2xl bg-[#dcdcdc] dark:bg-slate-900 border-2 space-y-4 sm:space-y-5 ${
+                          pendingEvent.category === 'CRITICAL'
+                            ? 'border-rose-500/80 dark:border-rose-500/80'
+                            : pendingEvent.category === 'MILESTONE_THAI'
+                            ? 'border-indigo-600/80 dark:border-amber-400/80'
+                            : 'border-amber-500/70'
+                        }`}
+                      >
+                        <div className="space-y-1.5 sm:space-y-2">
+                          <div
+                            className={`text-[10px] sm:text-[12px] font-bold ${
+                              pendingEvent.category === 'CRITICAL'
+                                ? 'text-rose-700 dark:text-rose-400'
+                                : pendingEvent.category === 'MILESTONE_THAI'
+                                ? 'text-indigo-700 dark:text-amber-300'
+                                : 'text-amber-700 dark:text-amber-400'
+                            }`}
+                          >
+                            {pendingEvent.category === 'CRITICAL'
+                              ? `เหตุวิกฤตฉุกเฉิน · อายุ ${player.age} ปี (เลือก 1 ข้อเพื่อรับมือทันที)`
+                              : pendingEvent.category === 'MILESTONE_THAI'
+                              ? `หมุดหมายชีวิตไทย · อายุ ${player.age} ปี (เลือก 1 ข้อเพื่อไปต่อ)`
                               : `เหตุการณ์ประจำปี · อายุ ${player.age} ปี (เลือก 1 ข้อเพื่อไปต่อ)`}
                           </div>
-                          <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
+                          <h3 className="text-[18px] sm:text-[22px] font-bold text-slate-900 dark:text-slate-100">
                             {pendingEvent.title}
                           </h3>
-                          <p className="text-sm sm:text-base text-slate-700 dark:text-slate-300 leading-relaxed">
+                          <p className="text-[12px] sm:text-[14px] text-slate-700 dark:text-slate-300 leading-relaxed">
                             {pendingEvent.description}
                           </p>
                         </div>
 
-                        <div className="space-y-3">
+                        <div className="space-y-2.5 sm:space-y-3">
                           {pendingEvent.choices.map((choice, idx) => (
                             <button
                               key={choice.id}
                               type="button"
                               onClick={() => handleSelectEventChoice(idx)}
-                              className="w-full text-left p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-amber-500 dark:hover:border-amber-500 bg-slate-50/80 dark:bg-slate-950/60 hover:bg-amber-50/50 dark:hover:bg-slate-800/80 transition-colors flex items-center justify-between gap-4 cursor-pointer"
+                              className="w-full text-left p-3.5 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-amber-500 dark:hover:border-amber-500 bg-slate-50/90 dark:bg-slate-950/60 hover:bg-amber-50/70 dark:hover:bg-slate-800/80 transition-colors flex items-center justify-between gap-3 sm:gap-4 cursor-pointer"
                             >
                               <div className="space-y-1">
-                                <div className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100">
+                                <div className="text-[12px] sm:text-[14px] font-bold text-slate-900 dark:text-slate-100">
                                   <span className="font-mono-num text-amber-700 dark:text-amber-400 mr-2">
                                     [{idx + 1}]
                                   </span>
                                   {choice.label}
                                 </div>
                                 {choice.sublabel && (
-                                  <div className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 pl-7 leading-relaxed">
+                                  <div className="text-[10px] sm:text-[12px] text-slate-600 dark:text-slate-400 pl-6 leading-relaxed">
                                     {choice.sublabel}
                                   </div>
                                 )}
                               </div>
-                              <ChevronRight className="w-5 h-5 text-slate-400 shrink-0" />
+                              <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-slate-500 dark:text-slate-400 shrink-0" />
                             </button>
                           ))}
                         </div>
@@ -1558,6 +1647,16 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Priority Notification Toast System (Strictly for 'CRITICAL' & 'MILESTONE_THAI' events) */}
+      {gameState === 'PLAYING' && (
+        <PriorityEventToast
+          toasts={priorityToasts}
+          soundMuted={soundMuted}
+          onDismiss={dismissPriorityToast}
+          onFocusEvent={focusPriorityToastEvent}
+        />
+      )}
 
       {/* Optional Character JSON State Modal (Moved out of primary tabs for clean UX) */}
       {showSchemaModal && (

@@ -158,6 +158,7 @@ export interface PlayerFlags {
   is_criminal_record: boolean;
   is_burnout: boolean;
   conscription_completed: boolean;
+  resolved_thai_milestones?: string[];
 }
 
 export interface YearlyLogEntry {
